@@ -1,0 +1,176 @@
+// JornIA — schema do banco (PostgreSQL)
+// Mapeado 1:1 do SPEC.md. Campos "status"/"origin"/"decision" ficam como String
+// (validados no app via Zod) para bater exatamente com o SPEC; user_role é enum.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  admin
+  manager
+  staff
+
+  @@map("user_role")
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  name         String
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  role         UserRole @default(staff)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  posts            Post[]
+  apiKeysCreated   ApiKey[]
+  reviewDecisions  ReviewDecision[]
+  postVersions     PostVersion[]
+  styleReferences  StyleReference[]
+
+  @@map("users")
+}
+
+model ApiKey {
+  id         String    @id @default(uuid()) @db.Uuid
+  name       String
+  keyHash    String    @map("key_hash")
+  scopes     String[]
+  createdBy  String?   @map("created_by") @db.Uuid
+  lastUsedAt DateTime? @map("last_used_at") @db.Timestamptz(6)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  creator User? @relation(fields: [createdBy], references: [id])
+
+  @@map("api_keys")
+}
+
+model Post {
+  id             String   @id @default(uuid()) @db.Uuid
+  createdBy      String   @map("created_by") @db.Uuid
+  region         String?
+  sourceType     String   @map("source_type") // 'photo' | 'text' | 'link'
+  sourceText     String?  @map("source_text")
+  sourceUrl      String?  @map("source_url")
+  scrapedContent String?  @map("scraped_content")
+  status         String   @default("processing_ai")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  author   User          @relation(fields: [createdBy], references: [id])
+  photos   PostPhoto[]
+  versions PostVersion[]
+
+  @@index([status])
+  @@index([createdBy])
+  @@map("posts")
+}
+
+model PostPhoto {
+  id         String   @id @default(uuid()) @db.Uuid
+  postId     String   @map("post_id") @db.Uuid
+  storageUrl String   @map("storage_url") // foto original, sem edição
+  orderIndex Int?     @map("order_index")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  post            Post          @relation(fields: [postId], references: [id], onDelete: Cascade)
+  selectedInVersions PostVersion[]
+
+  @@map("post_photos")
+}
+
+model ArtTemplate {
+  id              String   @id @default(uuid()) @db.Uuid
+  name            String
+  canvasWidth     Int      @default(1080) @map("canvas_width")
+  canvasHeight    Int      @default(1080) @map("canvas_height") // ou 1350 pro formato 4:5
+  overlayAssetUrl String   @map("overlay_asset_url")
+  photoSlot       Json     @map("photo_slot") // { x, y, width, height }
+  textSlot        Json     @map("text_slot") // { x, y, width, height, font, fontSize, color, align }
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  versions PostVersion[]
+
+  @@map("art_templates")
+}
+
+model StyleReference {
+  id               Int      @id @default(1) // linha única
+  exampleTitle     String?  @map("example_title")
+  exampleShortNews String?  @map("example_short_news")
+  exampleCaption   String?  @map("example_caption")
+  exampleArtText   String?  @map("example_art_text")
+  updatedBy        String?  @map("updated_by") @db.Uuid
+  updatedAt        DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  editor User? @relation(fields: [updatedBy], references: [id])
+
+  @@map("style_reference")
+}
+
+model PostVersion {
+  id               String   @id @default(uuid()) @db.Uuid
+  postId           String   @map("post_id") @db.Uuid
+  versionNumber    Int      @map("version_number")
+  origin           String // 'ai_generated' | 'manual_edit' | 'ai_regenerated'
+  title            String?
+  shortNews        String?  @map("short_news")
+  instagramCaption String?  @map("instagram_caption")
+  artText          String?  @map("art_text")
+  selectedPhotoId  String?  @map("selected_photo_id") @db.Uuid
+  photoTransform   Json?    @map("photo_transform") // { offsetX, offsetY, scale }
+  artTemplateId    String?  @map("art_template_id") @db.Uuid
+  renderedArtUrl   String?  @map("rendered_art_url")
+  editedBy         String?  @map("edited_by") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  post          Post             @relation(fields: [postId], references: [id], onDelete: Cascade)
+  selectedPhoto PostPhoto?       @relation(fields: [selectedPhotoId], references: [id])
+  artTemplate   ArtTemplate?     @relation(fields: [artTemplateId], references: [id])
+  editor        User?            @relation(fields: [editedBy], references: [id])
+  decisions     ReviewDecision[]
+  publications  Publication[]
+
+  @@unique([postId, versionNumber])
+  @@index([postId])
+  @@map("post_versions")
+}
+
+model ReviewDecision {
+  id            String   @id @default(uuid()) @db.Uuid
+  postVersionId String   @map("post_version_id") @db.Uuid
+  reviewerId    String   @map("reviewer_id") @db.Uuid
+  decision      String // 'approved' | 'rejected' | 'regenerate' | 'manual_edit'
+  reason        String?
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  postVersion PostVersion @relation(fields: [postVersionId], references: [id])
+  reviewer    User        @relation(fields: [reviewerId], references: [id])
+
+  @@index([postVersionId])
+  @@map("review_decisions")
+}
+
+model Publication {
+  id               String    @id @default(uuid()) @db.Uuid
+  postVersionId    String    @map("post_version_id") @db.Uuid
+  instagramMediaId String?   @map("instagram_media_id")
+  instagramPostUrl String?   @map("instagram_post_url")
+  status           String // 'pending' | 'container_created' | 'published' | 'failed'
+  errorMessage     String?   @map("error_message")
+  publishedAt      DateTime? @map("published_at") @db.Timestamptz(6)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  postVersion PostVersion @relation(fields: [postVersionId], references: [id])
+
+  @@index([postVersionId])
+  @@map("publications")
+}
