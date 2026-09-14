@@ -4,6 +4,7 @@ import { AnthropicProvider } from "./anthropic";
 import { OpenAICompatibleProvider } from "./openai-compatible";
 import { MockProvider } from "./mock";
 import { ChainProvider } from "./chain";
+import { validateGeneratedContent, violationsToGuidance } from "./validate";
 import type { AiProvider, GenerateInput, GeneratedContent } from "./types";
 
 export type { GenerateInput, GeneratedContent } from "./types";
@@ -164,18 +165,56 @@ export async function generatePostContent(
   const provider = getAiProvider();
   const fullInput = { ...input, examples };
 
-  if (provider instanceof ChainProvider) {
-    return provider.generate(fullInput);
-  }
+  const first = await generateOnce(provider, fullInput);
+  // O mock copia trechos da fonte ao pé da letra — validar não faz sentido.
+  if (provider instanceof MockProvider) return first;
 
+  // Validação factual determinística (validate.ts): compara o texto gerado
+  // com a fonte. Violou → UMA regeneração com as correções como guidance;
+  // se ainda violar, falha alto — melhor um erro claro pro jornalista do
+  // que um post convincente com fato inventado.
+  const sourceText = [input.text, input.scrapedContent]
+    .filter(Boolean)
+    .join("\n");
+  const violations = validateGeneratedContent(first, sourceText);
+  if (!violations.length) return first;
+
+  console.warn(
+    `[JornIA] Validação factual reprovou a 1ª geração (${violations
+      .map((v) => v.rule)
+      .join("; ")}). Regenerando com correções.`,
+  );
+  const corrective = violationsToGuidance(violations);
+  const retryInput = {
+    ...fullInput,
+    guidance: [input.guidance?.trim(), corrective].filter(Boolean).join("\n\n"),
+  };
+  const second = await generateOnce(provider, retryInput);
+  const remaining = validateGeneratedContent(second, sourceText);
+  if (!remaining.length) return second;
+
+  throw new Error(
+    "A IA insistiu em violar regras de fidelidade factual mesmo após correção " +
+      `(${remaining.map((v) => v.rule).join("; ")}). ` +
+      "Nada foi salvo — tente gerar de novo ou ajuste a fonte.",
+  );
+}
+
+async function generateOnce(
+  provider: AiProvider,
+  input: GenerateInput,
+): Promise<GeneratedContent> {
+  if (provider instanceof ChainProvider) {
+    return provider.generate(input);
+  }
   try {
-    return await provider.generate(fullInput);
+    return await provider.generate(input);
   } catch (err) {
     if (isRateLimitError(err)) throw err;
     console.warn(
       `[JornIA] IA (${provider.name}) falhou na 1ª tentativa, tentando de novo: ${(err as Error).message}`,
     );
-    return await provider.generate(fullInput);
+    return await provider.generate(input);
   }
 }
 

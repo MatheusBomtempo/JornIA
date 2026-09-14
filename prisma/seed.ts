@@ -93,14 +93,10 @@ async function main() {
           createdBy: admin.id,
           title: "Tragédia em BH: acidente entre motos deixa dois mortos",
           subtitle:
-            "Duas pessoas morreram em acidente na José Cândido da Silveira.",
-          caption: `Um grave acidente envolvendo duas motocicletas resultou na morte de duas pessoas na noite deste sábado (13), na Avenida José Cândido da Silveira, em Belo Horizonte.
+            "Colisão entre as duas motocicletas ocorreu na Avenida José Cândido da Silveira, no bairro União.",
+          caption: `Duas pessoas morreram em um acidente envolvendo duas motocicletas na noite deste sábado (13), na Avenida José Cândido da Silveira, no bairro União, em Belo Horizonte.
 
-A ocorrência foi registrada na altura do acesso ao bairro União, próximo à Rua Camilo Prates, no sentido Avenida Cristiano Machado. Devido ao impacto da colisão, as duas vítimas não resistiram aos ferimentos e morreram no local.
-
-Por conta da gravidade do fato, o trecho precisou ser interditado para permitir a atuação das equipes de emergência e o trabalho da perícia. As autoridades orientam que os motoristas evitem passar pela região e busquem rotas alternativas.
-
-A dinâmica da colisão ainda será apurada pelas autoridades competentes, e novas informações devem ser divulgadas ao longo das próximas horas.
+As duas vítimas não resistiram aos ferimentos e morreram no local. Equipes de emergência e a perícia estiveram na cena para atendimento e levantamento do acidente.
 
 📸 @arrobadofotografo
 

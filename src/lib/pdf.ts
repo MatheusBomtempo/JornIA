@@ -19,8 +19,13 @@ if (typeof (Promise as { withResolvers?: unknown }).withResolvers !== "function"
   };
 }
 
-/** Teto de caracteres enviados à IA (evita estourar a janela de contexto). */
-export const MAX_DOC_CHARS = 20000;
+/**
+ * Teto de caracteres extraídos do documento. Este NÃO é o texto que vai pra
+ * IA — a compactação (compact.ts) ainda filtra/reduz depois. Precisa ser
+ * folgado: um BO real de 15 páginas tem o histórico (a parte que importa)
+ * lá no fim, e um teto apertado aqui cortava a notícia antes da limpeza.
+ */
+export const MAX_DOC_CHARS = 60000;
 
 export interface ExtractedDocument {
   text: string;
