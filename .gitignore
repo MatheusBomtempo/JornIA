@@ -46,6 +46,9 @@ next-env.d.ts
 /public/uploads
 /.storage
 
+# cluster PostgreSQL local isolado (dev sem Docker)
+/.pgdata
+
 # editor / OS
 .idea
 .vscode/*

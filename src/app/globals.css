@@ -3,8 +3,13 @@
 @tailwind utilities;
 
 :root {
-  --background: #f6f7f9;
-  --foreground: #0e1116;
+  color-scheme: dark;
+  --bg: #0a0c10;
+  --surface: #12151b;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
 }
 
 html,
@@ -14,36 +19,94 @@ body {
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background:
+    radial-gradient(1100px 520px at 50% -12%, rgba(77, 124, 255, 0.09), transparent 60%),
+    var(--bg);
+  color: #e8ecf3;
+  min-height: 100dvh;
+}
+
+/* Barras de rolagem discretas */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #252b36;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #333b49;
+  background-clip: content-box;
 }
 
 @layer components {
+  /* ── Botões (alvos de toque >= 44px em mobile) ───────────── */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold
+           transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-45
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60;
   }
   .btn-primary {
-    @apply btn bg-brand-600 text-white hover:bg-brand-700;
+    @apply btn bg-brand-500 text-white hover:bg-brand-400 active:bg-brand-600;
   }
   .btn-ghost {
-    @apply btn border border-gray-300 bg-white text-gray-700 hover:bg-gray-50;
+    @apply btn border border-line bg-elevated text-ink hover:border-brand-500/50 hover:bg-line/60;
+  }
+  .btn-subtle {
+    @apply btn text-muted hover:bg-elevated hover:text-ink;
   }
   .btn-danger {
-    @apply btn bg-red-600 text-white hover:bg-red-700;
+    @apply btn bg-red-500/15 text-red-300 ring-1 ring-inset ring-red-500/30 hover:bg-red-500/25;
   }
   .btn-success {
-    @apply btn bg-emerald-600 text-white hover:bg-emerald-700;
+    @apply btn bg-emerald-500 text-white hover:bg-emerald-400 active:bg-emerald-600;
   }
+  .btn-sm {
+    @apply min-h-9 rounded-lg px-3 text-xs;
+  }
+
+  /* ── Superfícies ─────────────────────────────────────────── */
   .card {
-    @apply rounded-xl border border-gray-200 bg-white shadow-sm;
+    @apply rounded-2xl border border-line bg-surface shadow-soft;
   }
+  .card-soft {
+    @apply rounded-xl border border-lineSoft bg-elevated;
+  }
+
+  /* ── Formulário ──────────────────────────────────────────── */
   .input {
-    @apply w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100;
+    @apply w-full rounded-xl border border-line bg-elevated px-3.5 py-3 text-base text-ink
+           placeholder:text-faint outline-none transition
+           focus:border-brand-500 focus:ring-2 focus:ring-brand-500/25
+           md:py-2.5 md:text-sm;
   }
   .label {
-    @apply mb-1 block text-sm font-medium text-gray-700;
+    @apply mb-1.5 flex items-center gap-1.5 text-sm font-medium text-ink;
+  }
+  .hint {
+    @apply mt-1.5 text-xs leading-relaxed text-muted;
   }
   .badge {
-    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+    @apply inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold;
+  }
+
+  /* ── Feedback ────────────────────────────────────────────── */
+  .alert-error {
+    @apply rounded-xl border border-red-500/25 bg-red-500/10 px-3.5 py-2.5 text-sm text-red-300;
+  }
+  .alert-info {
+    @apply rounded-xl border border-brand-500/25 bg-brand-500/10 px-3.5 py-2.5 text-sm text-brand-200;
+  }
+}
+
+/* Impede zoom automático do iOS ao focar campos */
+@media (max-width: 767px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px;
   }
 }

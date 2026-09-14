@@ -3,9 +3,10 @@ import { requireUser } from "@/lib/auth";
 import { requireRole } from "@/lib/rbac";
 import { prisma } from "@/lib/db";
 import { artTemplateSchema } from "@/lib/validation";
+import { sortTemplatesByFormat } from "@/lib/domain";
 import { created, ok, route } from "@/lib/http";
 
-// GET /art-templates — templates disponíveis (por padrão só ativos)
+// GET /art-templates — templates disponíveis (por padrão só ativos), 4:5 primeiro
 export const GET = route(async (req: NextRequest) => {
   await requireUser();
   const includeInactive = new URL(req.url).searchParams.get("all") === "1";
@@ -13,7 +14,7 @@ export const GET = route(async (req: NextRequest) => {
     where: includeInactive ? {} : { isActive: true },
     orderBy: { createdAt: "desc" },
   });
-  return ok({ templates });
+  return ok({ templates: sortTemplatesByFormat(templates) });
 });
 
 // POST /art-templates — manager/admin cadastram template fixo
@@ -29,7 +30,8 @@ export const POST = route(async (req: NextRequest) => {
       canvasHeight: data.canvasHeight,
       overlayAssetUrl: data.overlayAssetUrl,
       photoSlot: data.photoSlot,
-      textSlot: data.textSlot,
+      titleSlot: data.titleSlot,
+      subtitleSlot: data.subtitleSlot ?? undefined,
       isActive: data.isActive ?? true,
     },
   });

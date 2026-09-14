@@ -30,63 +30,43 @@ function LoginForm() {
       router.refresh();
     } catch (err) {
       setError((err as Error).message);
-    } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-4">
-      <div className="card w-full max-w-sm p-8">
-        <div className="mb-6 text-center">
-          <div className="text-2xl font-bold tracking-tight">
-            Jorn<span className="text-brand-600">IA</span>
+    <div className="flex min-h-dvh items-center justify-center px-4 py-10">
+      <div className="w-full max-w-sm">
+        <div className="mb-7 text-center">
+          <div className="text-3xl font-extrabold tracking-tight">
+            Jorn<span className="text-brand-400">IA</span>
           </div>
-          <p className="mt-1 text-sm text-gray-500">
-            Publicação rápida no Instagram, com IA e revisão editorial.
+          <p className="mt-2 text-sm text-muted">
+            Da fonte ao feed em minutos.
           </p>
         </div>
 
-        <form onSubmit={onSubmit} className="space-y-4">
+        <form onSubmit={onSubmit} className="card space-y-4 p-6">
           <div>
-            <label className="label" htmlFor="email">
-              E-mail
-            </label>
+            <label className="label" htmlFor="email">E-mail</label>
             <input
-              id="email"
-              type="email"
-              className="input"
-              value={email}
+              id="email" type="email" className="input" value={email}
               onChange={(e) => setEmail(e.target.value)}
-              required
-              autoFocus
+              autoComplete="email" required autoFocus
             />
           </div>
           <div>
-            <label className="label" htmlFor="password">
-              Senha
-            </label>
+            <label className="label" htmlFor="password">Senha</label>
             <input
-              id="password"
-              type="password"
-              className="input"
-              value={password}
+              id="password" type="password" className="input" value={password}
               onChange={(e) => setPassword(e.target.value)}
-              required
+              autoComplete="current-password" required
             />
           </div>
 
-          {error && (
-            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
-              {error}
-            </p>
-          )}
+          {error && <p className="alert-error">{error}</p>}
 
-          <button
-            type="submit"
-            className="btn-primary w-full"
-            disabled={loading}
-          >
+          <button type="submit" className="btn-primary w-full" disabled={loading}>
             {loading ? "Entrando…" : "Entrar"}
           </button>
         </form>

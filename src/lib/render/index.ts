@@ -1,19 +1,27 @@
 import "server-only";
 import sharp from "sharp";
 import { putObject } from "../storage";
+import { renderTextToSvg } from "./text";
 import {
   photoSlotSchema,
   textSlotSchema,
   photoTransformSchema,
+  textOffsetSchema,
   type PhotoSlot,
-  type TextSlot,
   type PhotoTransform,
+  type TextSlot,
 } from "./slots";
 
 /**
  * Render final da arte no servidor (Sharp), a partir dos MESMOS parâmetros
  * salvos pelo editor — não a partir do canvas do navegador. Garante qualidade
  * e reprodutibilidade (SPEC.md).
+ *
+ * Composição, de baixo para cima:
+ *   1. foto (com pan/zoom, recortada ao slot)
+ *   2. overlay do template (PNG da marca, transparente onde a foto aparece)
+ *   3. título  (Poppins, vetorizado)
+ *   4. subtítulo (Poppins, vetorizado)
  */
 
 export interface RenderArtParams {
@@ -21,16 +29,31 @@ export interface RenderArtParams {
   canvasHeight: number;
   overlayAssetUrl: string;
   photoUrl: string;
-  photoSlot: unknown; // JSON do template (validado aqui)
-  textSlot: unknown; // JSON do template (validado aqui)
-  transform: unknown; // JSON do editor (validado aqui)
-  artText: string;
+  photoSlot: unknown;
+  titleSlot: unknown;
+  subtitleSlot?: unknown;
+  transform: unknown;
+  title: string;
+  subtitle?: string;
+  /** Deslocamento opcional do título/subtítulo — template continua intacto. */
+  titleOffset?: unknown;
+  subtitleOffset?: unknown;
+}
+
+/** Aplica o deslocamento (se houver) mantendo largura/altura do slot intactas. */
+function offsetSlot(slot: TextSlot, rawOffset: unknown): TextSlot {
+  const { offsetX, offsetY } = textOffsetSchema.parse(rawOffset ?? {});
+  if (!offsetX && !offsetY) return slot;
+  return { ...slot, x: slot.x + offsetX, y: slot.y + offsetY };
 }
 
 export async function renderArt(params: RenderArtParams): Promise<Buffer> {
   const photoSlot = photoSlotSchema.parse(params.photoSlot);
-  const textSlot = textSlotSchema.parse(params.textSlot);
+  const titleSlot = textSlotSchema.parse(params.titleSlot);
   const transform = photoTransformSchema.parse(params.transform ?? {});
+  const subtitleSlot = params.subtitleSlot
+    ? textSlotSchema.parse(params.subtitleSlot)
+    : null;
 
   const [photoBuf, overlayBuf] = await Promise.all([
     fetchBuffer(params.photoUrl),
@@ -49,21 +72,33 @@ export async function renderArt(params: RenderArtParams): Promise<Buffer> {
     });
   }
 
-  // 2) Overlay do template (moldura/marca) por cima da foto.
+  // 2) Overlay do template.
   const overlayResized = await sharp(overlayBuf)
     .resize(params.canvasWidth, params.canvasHeight, { fit: "fill" })
     .png()
     .toBuffer();
   layers.push({ input: overlayResized, left: 0, top: 0 });
 
-  // 3) Texto da arte (renderizado como SVG e composto).
-  if (params.artText?.trim()) {
-    const textSvg = renderTextSvg(params.artText, textSlot);
-    layers.push({
-      input: Buffer.from(textSvg),
-      left: Math.round(textSlot.x),
-      top: Math.round(textSlot.y),
-    });
+  // 3 + 4) Título e subtítulo em Poppins vetorizada, num único SVG.
+  // O deslocamento (se o jornalista moveu o texto nesta versão) desloca só
+  // a posição — largura, fonte e quebra de linha continuam do template.
+  const title = await renderTextToSvg(
+    params.title ?? "",
+    offsetSlot(titleSlot, params.titleOffset),
+  );
+  const subtitle = subtitleSlot
+    ? await renderTextToSvg(
+        params.subtitle ?? "",
+        offsetSlot(subtitleSlot, params.subtitleOffset),
+      )
+    : { svg: "", height: 0, lines: 0 };
+
+  if (title.svg || subtitle.svg) {
+    const textSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${params.canvasWidth}" height="${params.canvasHeight}">
+${title.svg}
+${subtitle.svg}
+</svg>`;
+    layers.push({ input: Buffer.from(textSvg), left: 0, top: 0 });
   }
 
   return sharp({
@@ -71,7 +106,7 @@ export async function renderArt(params: RenderArtParams): Promise<Buffer> {
       width: params.canvasWidth,
       height: params.canvasHeight,
       channels: 4,
-      background: { r: 17, g: 17, b: 17, alpha: 1 },
+      background: { r: 12, g: 14, b: 18, alpha: 1 },
     },
   })
     .composite(layers)
@@ -108,16 +143,14 @@ async function renderPhotoIntoSlot(
 
   const resized = await sharp(photoBuf).resize(dispW, dispH).toBuffer();
 
-  // Posição do topo-esquerdo da foto relativa ao topo-esquerdo do slot.
   const left = Math.round((slot.width - dispW) / 2 + t.offsetX);
   const top = Math.round((slot.height - dispH) / 2 + t.offsetY);
 
-  // Região da foto redimensionada que cai dentro do slot.
   const ex = Math.max(0, -left);
   const ey = Math.max(0, -top);
   const ew = Math.min(dispW - ex, slot.width - Math.max(0, left));
   const eh = Math.min(dispH - ey, slot.height - Math.max(0, top));
-  if (ew <= 0 || eh <= 0) return null; // foto fora de vista
+  if (ew <= 0 || eh <= 0) return null;
 
   const region = await sharp(resized)
     .extract({ left: ex, top: ey, width: ew, height: eh })
@@ -138,66 +171,7 @@ async function renderPhotoIntoSlot(
     .toBuffer();
 }
 
-function renderTextSvg(text: string, slot: TextSlot): string {
-  const lines = wrapText(text, slot);
-  const lineHeightPx = slot.fontSize * slot.lineHeight;
-
-  const anchor =
-    slot.align === "center" ? "middle" : slot.align === "right" ? "end" : "start";
-  const tx =
-    slot.align === "center"
-      ? slot.width / 2
-      : slot.align === "right"
-        ? slot.width
-        : 0;
-
-  const tspans = lines
-    .map(
-      (line, i) =>
-        `<tspan x="${tx}" dy="${i === 0 ? slot.fontSize : lineHeightPx}">${escapeXml(
-          line,
-        )}</tspan>`,
-    )
-    .join("");
-
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${slot.width}" height="${slot.height}">
-  <text font-family="${escapeXml(slot.font)}" font-size="${slot.fontSize}" font-weight="${slot.weight}" fill="${slot.color}" text-anchor="${anchor}">${tspans}</text>
-</svg>`;
-}
-
-/** Quebra de linha aproximada por largura (estimativa de largura de glifo). */
-function wrapText(text: string, slot: TextSlot): string[] {
-  const maxChars = Math.max(
-    1,
-    Math.floor(slot.width / (slot.fontSize * 0.55)),
-  );
-  const words = text.trim().split(/\s+/);
-  const lines: string[] = [];
-  let current = "";
-  for (const w of words) {
-    const candidate = current ? `${current} ${w}` : w;
-    if (candidate.length > maxChars && current) {
-      lines.push(current);
-      current = w;
-    } else {
-      current = candidate;
-    }
-  }
-  if (current) lines.push(current);
-  return lines;
-}
-
-function escapeXml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
-}
-
 async function fetchBuffer(url: string): Promise<Buffer> {
-  // Suporta caminhos locais servidos pela app e URLs remotas.
   const res = await fetch(url);
   if (!res.ok) {
     throw new Error(`Falha ao baixar recurso (${res.status}): ${url}`);

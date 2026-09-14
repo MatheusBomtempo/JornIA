@@ -8,31 +8,34 @@ export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const user = await getCurrentUser();
-  if (!user) return null; // middleware já redireciona
+  if (!user) return null;
 
   const posts = await listPosts();
 
   return (
     <AppShell user={{ name: user.name, role: user.role }}>
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-5 flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold">Feed de pautas</h1>
-          <p className="text-sm text-gray-500">
+          <h1 className="text-xl font-bold tracking-tight">Feed de pautas</h1>
+          <p className="text-sm text-muted">
             {posts.length} {posts.length === 1 ? "post" : "posts"} no fluxo
           </p>
         </div>
-        <Link href="/capture" className="btn-primary">
+        <Link href="/capture" className="btn-primary shrink-0">
           + Nova pauta
         </Link>
       </div>
 
       {posts.length === 0 ? (
-        <div className="card p-10 text-center text-gray-500">
-          Nenhuma pauta ainda. Comece enviando uma foto, texto ou link em{" "}
-          <Link href="/capture" className="text-brand-600 underline">
-            Nova pauta
+        <div className="card px-6 py-14 text-center">
+          <p className="text-3xl" aria-hidden>📰</p>
+          <p className="mt-3 font-medium">Nenhuma pauta ainda</p>
+          <p className="mx-auto mt-1 max-w-sm text-sm text-muted">
+            Cole um texto ou um link, anexe a foto e a IA monta o post pra você.
+          </p>
+          <Link href="/capture" className="btn-primary mt-5 inline-flex">
+            Criar a primeira pauta
           </Link>
-          .
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -42,31 +45,36 @@ export default async function DashboardPage() {
               <Link
                 key={post.id}
                 href={`/posts/${post.id}`}
-                className="card overflow-hidden transition hover:shadow-md"
+                className="card group overflow-hidden transition-colors hover:border-brand-500/50"
               >
-                <div className="aspect-square bg-gray-100">
+                <div className="aspect-square bg-black">
                   {v?.renderedArtUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={v.renderedArtUrl}
-                      alt={v.title ?? "Arte"}
-                      className="h-full w-full object-cover"
+                      alt={v.title ?? "Arte do post"}
+                      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
                     />
                   ) : (
-                    <div className="flex h-full items-center justify-center text-sm text-gray-400">
-                      arte ainda não renderizada
+                    <div className="flex h-full items-center justify-center px-4 text-center text-xs text-faint">
+                      arte ainda não gerada
                     </div>
                   )}
                 </div>
                 <div className="space-y-2 p-3">
                   <StatusBadge status={post.status} />
-                  <div className="line-clamp-2 text-sm font-medium">
+                  <p className="line-clamp-2 text-sm font-medium leading-snug">
                     {v?.title ?? "(sem título)"}
-                  </div>
-                  <div className="text-xs text-gray-500">
-                    por {post.author.name} ·{" "}
-                    {new Date(post.updatedAt).toLocaleString("pt-BR")}
-                  </div>
+                  </p>
+                  <p className="text-xs text-faint">
+                    {post.author.name} ·{" "}
+                    {new Date(post.updatedAt).toLocaleString("pt-BR", {
+                      day: "2-digit",
+                      month: "2-digit",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </p>
                 </div>
               </Link>
             );

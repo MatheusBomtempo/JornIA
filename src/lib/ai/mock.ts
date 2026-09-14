@@ -1,3 +1,5 @@
+import { formatCredit } from "../domain";
+import { TITLE_MAX, SUBTITLE_MAX } from "../render/slots";
 import type { AiProvider, GenerateInput, GeneratedContent } from "./types";
 
 /**
@@ -9,17 +11,29 @@ export class MockProvider implements AiProvider {
 
   async generate(input: GenerateInput): Promise<GeneratedContent> {
     const base =
-      input.sourceText?.trim() ||
+      input.text?.trim() ||
       input.scrapedContent?.trim() ||
       input.sourceUrl ||
       "Notícia de última hora";
-    const snippet = base.split(/\s+/).slice(0, 12).join(" ");
+    const snippet = capitalize(base.split(/\s+/).slice(0, 10).join(" "));
+
+    const credits = (input.credits ?? []).map(formatCredit).filter(Boolean);
 
     return {
-      title: capitalize(snippet).slice(0, 70) || "Manchete de exemplo",
-      shortNews: `${capitalize(snippet)}. Texto gerado em modo de desenvolvimento (mock), sem IA real. Substitua configurando AI_PROVIDER=anthropic.`,
-      instagramCaption: `${capitalize(snippet)} 📰\n\nSaiba mais no nosso feed. #jornalismo #noticias`,
-      artText: capitalize(snippet).slice(0, 40).toUpperCase(),
+      title: snippet.slice(0, TITLE_MAX),
+      subtitle: `Detalhe gerado em modo de desenvolvimento, sem IA real.`.slice(
+        0,
+        SUBTITLE_MAX,
+      ),
+      instagramCaption: [
+        snippet + ".",
+        "",
+        "Texto gerado em modo de desenvolvimento (mock). Configure AI_PROVIDER para usar IA de verdade.",
+        ...(credits.length ? ["", ...credits] : []),
+        "",
+        "#JornIA #Teste",
+      ].join("\n"),
+      meta: { provider: this.name, model: "mock" },
     };
   }
 }

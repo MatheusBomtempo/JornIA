@@ -32,7 +32,8 @@ model User {
   apiKeysCreated   ApiKey[]
   reviewDecisions  ReviewDecision[]
   postVersions     PostVersion[]
-  styleReferences  StyleReference[]
+  styleExamples    StyleExample[]
+  styleReferences  StyleReference[] // legado
 
   @@map("users")
 }
@@ -60,6 +61,8 @@ model Post {
   sourceText     String?  @map("source_text")
   sourceUrl      String?  @map("source_url")
   scrapedContent String?  @map("scraped_content")
+  /** Créditos/marcações: [{ type: 'photo'|'source'|..., handle: '@fulano' }] */
+  credits        Json?
   status         String   @default("processing_ai")
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -93,7 +96,10 @@ model ArtTemplate {
   canvasHeight    Int      @default(1080) @map("canvas_height") // ou 1350 pro formato 4:5
   overlayAssetUrl String   @map("overlay_asset_url")
   photoSlot       Json     @map("photo_slot") // { x, y, width, height }
-  textSlot        Json     @map("text_slot") // { x, y, width, height, font, fontSize, color, align }
+  /** Slot do título da arte (máx. 69 caracteres). */
+  titleSlot       Json     @map("text_slot")
+  /** Slot do subtítulo, logo abaixo do título (máx. 149 caracteres). */
+  subtitleSlot    Json?    @map("subtitle_slot")
   isActive        Boolean  @default(true) @map("is_active")
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
@@ -102,8 +108,13 @@ model ArtTemplate {
   @@map("art_templates")
 }
 
+/**
+ * LEGADO — substituída por StyleExample. Mantida apenas para não destruir
+ * dados existentes; nenhuma parte do app lê ou escreve nesta tabela.
+ * Pode ser removida numa migração futura, quando você quiser.
+ */
 model StyleReference {
-  id               Int      @id @default(1) // linha única
+  id               Int      @id @default(1)
   exampleTitle     String?  @map("example_title")
   exampleShortNews String?  @map("example_short_news")
   exampleCaption   String?  @map("example_caption")
@@ -116,17 +127,47 @@ model StyleReference {
   @@map("style_reference")
 }
 
+/**
+ * Exemplos de referência de estilo. A IA imita o tom/formato destes posts
+ * reais do jornal (não copia o conteúdo).
+ */
+model StyleExample {
+  id         String   @id @default(uuid()) @db.Uuid
+  title      String? // título da arte (máx. 69)
+  subtitle   String? // subtítulo da arte (máx. 149)
+  caption    String? // legenda completa do Instagram
+  orderIndex Int      @default(0) @map("order_index")
+  createdBy  String?  @map("created_by") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  author User? @relation(fields: [createdBy], references: [id])
+
+  @@map("style_examples")
+}
+
 model PostVersion {
   id               String   @id @default(uuid()) @db.Uuid
   postId           String   @map("post_id") @db.Uuid
   versionNumber    Int      @map("version_number")
   origin           String // 'ai_generated' | 'manual_edit' | 'ai_regenerated'
+  /** Título da arte (máx. 69 caracteres). */
   title            String?
-  shortNews        String?  @map("short_news")
+  /** Subtítulo da arte, abaixo do título (máx. 149 caracteres). */
+  subtitle         String?
+  shortNews        String?  @map("short_news") // legado, não usado
   instagramCaption String?  @map("instagram_caption")
-  artText          String?  @map("art_text")
+  artText          String?  @map("art_text") // legado, não usado
+  /** Provedor que gerou o texto desta versão (ex.: "groq", "openrouter:..."). Nulo em edição manual. */
+  aiProvider       String?  @map("ai_provider")
+  /** Modelo usado pelo provedor acima (ex.: "openai/gpt-oss-20b"). */
+  aiModel          String?  @map("ai_model")
   selectedPhotoId  String?  @map("selected_photo_id") @db.Uuid
   photoTransform   Json?    @map("photo_transform") // { offsetX, offsetY, scale }
+  /** Deslocamento do título em relação à posição padrão do template. */
+  titleOffset      Json?    @map("title_offset") // { offsetX, offsetY }
+  /** Deslocamento do subtítulo em relação à posição padrão do template. */
+  subtitleOffset   Json?    @map("subtitle_offset") // { offsetX, offsetY }
   artTemplateId    String?  @map("art_template_id") @db.Uuid
   renderedArtUrl   String?  @map("rendered_art_url")
   editedBy         String?  @map("edited_by") @db.Uuid

@@ -20,7 +20,7 @@
 
 Uma ferramenta web para uma redação publicar posts **urgentes** no feed do Instagram com o **mínimo de fricção**:
 
-1. **Captura** — o jornalista manda a fonte: uma foto, um texto pronto ou um link.
+1. **Captura** — numa tela só, o jornalista manda o que tem: texto colado, link da matéria e/ou um **PDF** (boletim de ocorrência, nota oficial) — mais a foto.
 2. **IA (só texto)** — o sistema gera **título**, **notícia curta**, **legenda** e o **texto sugerido da arte**.
 3. **Editor de arte** — o próprio jornalista ajusta a foto (posição/zoom) e o texto dentro de um **template fixo da marca**.
 4. **Revisão** — um editor/gerente vê um **preview estilo Instagram** e decide: **aprovar**, **recusar**, **refazer com IA** ou **editar** manualmente.
@@ -52,7 +52,8 @@ Cada ciclo (IA ou edição manual) gera uma **nova versão**, nunca sobrescreve 
 | Render final | **Sharp** (server-side, a partir dos parâmetros salvos — não do canvas) |
 | Backend | Next.js API Routes |
 | Banco | **PostgreSQL** + **Prisma** |
-| IA (texto) | Abstração de provider — **Anthropic (Claude)** por padrão, ou `mock` para dev |
+| IA (texto) | Abstração de provider — **Anthropic**, **Groq**, **Gemini**, **OpenRouter**, **OpenAI** ou `mock` (dev, sem chave) |
+| Leitura de fontes | **Cheerio** (scraping de links) + **unpdf/pdf.js** (texto de PDF) |
 | Storage | Abstração — **local** (dev) ou **S3 / Cloudflare R2 / Supabase** |
 | Publicação | **Instagram Graph API** (Meta), sem libs de terceiros |
 | Auth | Sessão própria com JWT (`jose`) + `bcrypt`, papéis por RBAC |
@@ -107,6 +108,7 @@ Sem Docker? Basta apontar `DATABASE_URL` no `.env` para o seu Postgres e usar `n
 ```
 POST   /api/posts                                   cria post + dispara IA (texto)
 GET    /api/posts                                   listagem (?status=&mine=1)
+POST   /api/documents                               PDF/txt -> texto extraído (material de apoio)
 GET    /api/posts/:id                               detalhe (versões, decisões, publicações)
 POST   /api/posts/:id/art                           salva photo_transform + art_text -> render (Sharp)
 POST   /api/posts/:id/regenerate                    novo ciclo de IA (nova versão)
@@ -158,7 +160,7 @@ prisma/
 
 - [ ] Stories, carrossel e vídeo (Reels)
 - [ ] Multi-rede (X/Threads/Facebook)
-- [ ] Provider de IA OpenAI/Gemini plugável (a interface já existe)
+- [x] Providers de IA plugáveis (Anthropic, OpenRouter, OpenAI) — Gemini nativo a caminho
 - [ ] Biblioteca de templates com editor visual de slots
 - [ ] Métricas de publicação e fila de reprocessamento
 - [ ] Autenticação de máquina via API keys (o modelo já existe no schema)

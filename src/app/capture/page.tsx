@@ -11,10 +11,12 @@ export default async function CapturePage() {
   return (
     <AppShell user={{ name: user.name, role: user.role }}>
       <div className="mx-auto max-w-2xl">
-        <h1 className="mb-1 text-xl font-semibold">Nova pauta</h1>
-        <p className="mb-6 text-sm text-gray-500">
-          Envie a fonte. A IA gera o texto e você ajusta a arte no passo seguinte.
-        </p>
+        <header className="mb-5">
+          <h1 className="text-xl font-bold tracking-tight">Nova pauta</h1>
+          <p className="mt-1 text-sm text-muted">
+            Manda o que você tem. A IA escreve o post e você só ajusta a foto e aprova.
+          </p>
+        </header>
         <CaptureForm />
       </div>
     </AppShell>

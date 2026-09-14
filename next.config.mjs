@@ -8,8 +8,9 @@ const nextConfig = {
   reactStrictMode: true,
   // Evita que o Next infira a raiz errada quando há outro lockfile acima.
   outputFileTracingRoot: __dirname,
-  // Sharp é usado no server para o render final da arte.
-  serverExternalPackages: ["sharp"],
+  // Sharp faz o render final da arte; unpdf (pdf.js) extrai texto de PDF.
+  // Ambos rodam só no servidor e não devem ser empacotados.
+  serverExternalPackages: ["sharp", "unpdf", "opentype.js"],
   images: {
     // Permite exibir fotos/arte hospedadas no storage configurado.
     remotePatterns: [

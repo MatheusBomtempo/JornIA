@@ -21,7 +21,9 @@ export class AnthropicProvider implements AiProvider {
   async generate(input: GenerateInput): Promise<GeneratedContent> {
     const msg = await this.client.messages.create({
       model: env.ai.model,
-      max_tokens: 1024,
+      // Legendas de 3-5 parágrafos + créditos + hashtags podem passar de
+      // 1024 tokens e cortar no meio da frase — dá folga.
+      max_tokens: 1600,
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: buildUserPrompt(input) }],
     });
@@ -31,6 +33,6 @@ export class AnthropicProvider implements AiProvider {
       .map((b) => b.text)
       .join("\n");
 
-    return parseGeneratedContent(text);
+    return { ...parseGeneratedContent(text), meta: { provider: this.name, model: env.ai.model } };
   }
 }

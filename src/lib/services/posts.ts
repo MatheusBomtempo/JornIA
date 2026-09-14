@@ -2,11 +2,12 @@ import "server-only";
 import { prisma } from "../db";
 import { generatePostContent } from "../ai";
 import { scrapeUrl } from "../scrape";
+import { compactSource } from "../compact";
 import { renderAndStore } from "../render";
 import { publishToInstagram } from "../instagram";
 import { canEditPost, can } from "../rbac";
 import { ApiError, badRequest, forbidden, notFound } from "../http";
-import { POST_STATUS, PUBLICATION_STATUS } from "../domain";
+import { POST_STATUS, PUBLICATION_STATUS, type Credit } from "../domain";
 import type { z } from "zod";
 import type {
   createPostSchema,
@@ -15,6 +16,7 @@ import type {
   editVersionSchema,
 } from "../validation";
 import type { User, PostVersion } from "@prisma/client";
+import type { CompactResult } from "../compact";
 
 type CreatePostInput = z.infer<typeof createPostSchema>;
 type SaveArtInput = z.infer<typeof saveArtSchema>;
@@ -41,41 +43,66 @@ async function latestVersion(postId: string): Promise<PostVersion> {
 
 // ── 1) Criar post + pipeline de IA (só texto) ────────────────
 export async function createPostWithAi(user: User, input: CreatePostInput) {
-  let scrapedContent: string | null = null;
-  let sourceText = input.sourceText ?? null;
+  let sourceText = input.text ?? null;
 
-  if (input.sourceType === "link" && input.sourceUrl) {
-    const scraped = await scrapeUrl(input.sourceUrl);
-    scrapedContent = scraped.content;
+  // Material de apoio: link raspado e/ou documento anexado (PDF/txt) —
+  // passa pelo pipeline de compactação antes de ir pro prompt (ver compact.ts):
+  // documento estruturado (boletim, laudo, nota) tem só os campos extraídos
+  // por regra, sem gastar token de IA nisso; texto genérico é cortado num
+  // teto mais justo. Reduz tokens e redige dado pessoal ANTES da IA ver.
+  const support: string[] = [];
+  if (input.url) {
+    const scraped = await scrapeUrl(input.url);
+    const compacted = compactSource(scraped.content);
+    logCompaction("link", compacted);
+    support.push(
+      `[Link (${labelKind(compacted.kind)}): ${input.url}]\n${compacted.text}`,
+    );
     if (!sourceText && scraped.title) sourceText = scraped.title;
   }
+  if (input.document) {
+    const compacted = compactSource(input.document.text);
+    logCompaction("documento", compacted);
+    support.push(
+      `[Documento anexado (${labelKind(compacted.kind)}): ${input.document.name}]\n${compacted.text}`,
+    );
+  }
+  const scrapedContent = support.length ? support.join("\n\n---\n\n") : null;
+
+  // Tipo de fonte derivado (a UI não pergunta mais).
+  const sourceType = input.url
+    ? "link"
+    : input.document
+      ? "document"
+      : input.text
+        ? "text"
+        : "photo";
+
+  const credits = (input.credits ?? []).filter((c) => c.handle.trim());
 
   const post = await prisma.post.create({
     data: {
       createdBy: user.id,
-      region: input.region ?? null,
-      sourceType: input.sourceType,
+      sourceType,
       sourceText,
-      sourceUrl: input.sourceUrl ?? null,
+      sourceUrl: input.url ?? null,
       scrapedContent,
+      credits: credits.length ? credits : undefined,
       status: POST_STATUS.PROCESSING_AI,
-      photos: {
-        create: (input.photos ?? []).map((p, i) => ({
-          storageUrl: p.storageUrl,
-          orderIndex: p.orderIndex ?? i,
-        })),
-      },
+      photos: input.photo
+        ? { create: [{ storageUrl: input.photo.storageUrl, orderIndex: 0 }] }
+        : undefined,
     },
     include: { photos: true },
   });
 
   try {
     const content = await generatePostContent({
-      sourceType: input.sourceType,
-      sourceText,
-      sourceUrl: input.sourceUrl,
+      text: sourceText,
+      sourceUrl: input.url,
       scrapedContent,
-      region: input.region,
+      hasPhoto: !!input.photo,
+      credits: credits as Credit[],
     });
 
     await prisma.postVersion.create({
@@ -84,9 +111,10 @@ export async function createPostWithAi(user: User, input: CreatePostInput) {
         versionNumber: 1,
         origin: "ai_generated",
         title: content.title,
-        shortNews: content.shortNews,
+        subtitle: content.subtitle,
         instagramCaption: content.instagramCaption,
-        artText: content.artText,
+        aiProvider: content.meta?.provider,
+        aiModel: content.meta?.model,
         // pré-seleciona a primeira foto, se houver
         selectedPhotoId: post.photos[0]?.id ?? null,
         editedBy: user.id,
@@ -136,9 +164,13 @@ export async function saveArtAndRender(
       overlayAssetUrl: template.overlayAssetUrl,
       photoUrl: photo.storageUrl,
       photoSlot: template.photoSlot,
-      textSlot: template.textSlot,
+      titleSlot: template.titleSlot,
+      subtitleSlot: template.subtitleSlot ?? undefined,
       transform: input.photoTransform,
-      artText: input.artText,
+      title: input.title,
+      subtitle: input.subtitle,
+      titleOffset: input.titleOffset,
+      subtitleOffset: input.subtitleOffset,
     },
     `art/${postId}/v${version.versionNumber}-${Date.now()}.png`,
   );
@@ -149,7 +181,10 @@ export async function saveArtAndRender(
       selectedPhotoId: photo.id,
       artTemplateId: template.id,
       photoTransform: input.photoTransform,
-      artText: input.artText,
+      title: input.title,
+      subtitle: input.subtitle,
+      titleOffset: input.titleOffset,
+      subtitleOffset: input.subtitleOffset,
       renderedArtUrl,
       editedBy: user.id,
     },
@@ -176,14 +211,24 @@ export async function regeneratePost(
 
   const prev = await latestVersion(postId);
 
-  const content = await generatePostContent({
-    sourceType: post.sourceType as "photo" | "text" | "link",
-    sourceText: post.sourceText,
-    sourceUrl: post.sourceUrl,
-    scrapedContent: post.scrapedContent,
-    region: post.region,
-    guidance: input.guidance,
-  });
+  const photoCount = await prisma.postPhoto.count({ where: { postId } });
+  let content;
+  try {
+    content = await generatePostContent({
+      text: post.sourceText,
+      sourceUrl: post.sourceUrl,
+      scrapedContent: post.scrapedContent,
+      hasPhoto: photoCount > 0,
+      credits: (post.credits as Credit[] | null) ?? undefined,
+      guidance: input.guidance,
+    });
+  } catch (err) {
+    // Nada foi alterado ainda — o post continua exatamente como estava.
+    throw new ApiError(
+      502,
+      `Falha ao reescrever com IA: ${(err as Error).message}`,
+    );
+  }
 
   const version = await prisma.postVersion.create({
     data: {
@@ -191,13 +236,16 @@ export async function regeneratePost(
       versionNumber: await nextVersionNumber(postId),
       origin: "ai_regenerated",
       title: content.title,
-      shortNews: content.shortNews,
+      subtitle: content.subtitle,
       instagramCaption: content.instagramCaption,
-      artText: content.artText,
+      aiProvider: content.meta?.provider,
+      aiModel: content.meta?.model,
       // carrega escolhas de arte da versão anterior (arte precisa ser re-renderizada)
       selectedPhotoId: prev.selectedPhotoId,
       artTemplateId: prev.artTemplateId,
       photoTransform: prev.photoTransform ?? undefined,
+      titleOffset: prev.titleOffset ?? undefined,
+      subtitleOffset: prev.subtitleOffset ?? undefined,
       editedBy: user.id,
     },
   });
@@ -238,8 +286,10 @@ export async function editVersionManually(
   });
   if (!source || source.postId !== postId) throw notFound("Versão não encontrada.");
 
-  const artTextChanged =
-    input.artText !== undefined && input.artText !== source.artText;
+  // Título e subtítulo aparecem na arte — mudou, precisa re-renderizar.
+  const artChanged =
+    (input.title !== undefined && input.title !== source.title) ||
+    (input.subtitle !== undefined && input.subtitle !== source.subtitle);
 
   // nova versão manual_edit (nunca sobrescreve)
   const version = await prisma.postVersion.create({
@@ -248,19 +298,19 @@ export async function editVersionManually(
       versionNumber: await nextVersionNumber(postId),
       origin: "manual_edit",
       title: input.title ?? source.title,
-      shortNews: input.shortNews ?? source.shortNews,
+      subtitle: input.subtitle ?? source.subtitle,
       instagramCaption: input.instagramCaption ?? source.instagramCaption,
-      artText: input.artText ?? source.artText,
       selectedPhotoId: source.selectedPhotoId,
       artTemplateId: source.artTemplateId,
       photoTransform: source.photoTransform ?? undefined,
+      titleOffset: source.titleOffset ?? undefined,
+      subtitleOffset: source.subtitleOffset ?? undefined,
       renderedArtUrl: source.renderedArtUrl,
       editedBy: user.id,
     },
   });
 
-  // Re-render se o texto da arte mudou e há template+foto definidos.
-  if (artTextChanged && version.artTemplateId && version.selectedPhotoId) {
+  if (artChanged && version.artTemplateId && version.selectedPhotoId) {
     const [photo, template] = await Promise.all([
       prisma.postPhoto.findUnique({ where: { id: version.selectedPhotoId } }),
       prisma.artTemplate.findUnique({ where: { id: version.artTemplateId } }),
@@ -273,9 +323,13 @@ export async function editVersionManually(
           overlayAssetUrl: template.overlayAssetUrl,
           photoUrl: photo.storageUrl,
           photoSlot: template.photoSlot,
-          textSlot: template.textSlot,
+          titleSlot: template.titleSlot,
+          subtitleSlot: template.subtitleSlot ?? undefined,
           transform: version.photoTransform ?? {},
-          artText: version.artText ?? "",
+          title: version.title ?? "",
+          subtitle: version.subtitle ?? "",
+          titleOffset: version.titleOffset ?? undefined,
+          subtitleOffset: version.subtitleOffset ?? undefined,
         },
         `art/${postId}/v${version.versionNumber}-${Date.now()}.png`,
       );
@@ -436,11 +490,28 @@ export function listPosts(opts: { status?: string; mineFor?: string } = {}) {
         take: 1,
         select: {
           title: true,
-          shortNews: true,
+          subtitle: true,
           renderedArtUrl: true,
           versionNumber: true,
         },
       },
     },
   });
+}
+
+function labelKind(kind: "structured" | "generic"): string {
+  return kind === "structured" ? "documento estruturado" : "matéria";
+}
+
+function logCompaction(source: string, r: CompactResult) {
+  const savedPct =
+    r.originalChars > 0
+      ? Math.round((1 - r.compactChars / r.originalChars) * 100)
+      : 0;
+  console.log(
+    `[JornIA] compactação (${source}): ${r.kind} · ${r.originalChars} → ${r.compactChars} chars` +
+      (savedPct > 0 ? ` (-${savedPct}%)` : "") +
+      (r.redactedCount > 0 ? ` · ${r.redactedCount} dado(s) sensível(is) redigido(s)` : "") +
+      (r.removedDuplicateLines > 0 ? ` · ${r.removedDuplicateLines} linha(s) repetida(s) removida(s)` : ""),
+  );
 }

@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { AppShell } from "@/components/AppShell";
 import { PostWorkspace } from "@/components/PostWorkspace";
 import type { EditorTemplate } from "@/components/ArtEditor";
+import { sortTemplatesByFormat } from "@/lib/domain";
 
 export const dynamic = "force-dynamic";
 
@@ -20,12 +21,15 @@ export default async function PostPage({
   const post = await getPostDetail(id);
   if (!post) notFound();
 
-  const templatesRaw = await prisma.artTemplate.findMany({
-    where: { isActive: true },
-    orderBy: { createdAt: "desc" },
-  });
+  const templatesRaw = sortTemplatesByFormat(
+    await prisma.artTemplate.findMany({
+      where: { isActive: true },
+      orderBy: { createdAt: "desc" },
+    }),
+  );
 
   // Serializa para props client-safe (datas -> ISO, JSON -> tipado).
+  // Ordenado com 4:5 primeiro — é o formato pré-selecionado no editor.
   const templates: EditorTemplate[] = templatesRaw.map((t) => ({
     id: t.id,
     name: t.name,
@@ -33,14 +37,14 @@ export default async function PostPage({
     canvasHeight: t.canvasHeight,
     overlayAssetUrl: t.overlayAssetUrl,
     photoSlot: t.photoSlot as EditorTemplate["photoSlot"],
-    textSlot: t.textSlot as EditorTemplate["textSlot"],
+    titleSlot: t.titleSlot as EditorTemplate["titleSlot"],
+    subtitleSlot: (t.subtitleSlot ?? null) as EditorTemplate["subtitleSlot"],
   }));
 
   const serialized = {
     id: post.id,
     status: post.status,
     sourceType: post.sourceType,
-    region: post.region,
     createdBy: post.createdBy,
     author: { name: post.author.name },
     photos: post.photos.map((p) => ({ id: p.id, storageUrl: p.storageUrl })),
@@ -49,9 +53,10 @@ export default async function PostPage({
       versionNumber: v.versionNumber,
       origin: v.origin,
       title: v.title,
-      shortNews: v.shortNews,
+      subtitle: v.subtitle,
       instagramCaption: v.instagramCaption,
-      artText: v.artText,
+      aiProvider: v.aiProvider,
+      aiModel: v.aiModel,
       renderedArtUrl: v.renderedArtUrl,
       selectedPhotoId: v.selectedPhotoId,
       artTemplateId: v.artTemplateId,
@@ -60,6 +65,8 @@ export default async function PostPage({
         offsetY: number;
         scale: number;
       } | null,
+      titleOffset: v.titleOffset as { offsetX: number; offsetY: number } | null,
+      subtitleOffset: v.subtitleOffset as { offsetX: number; offsetY: number } | null,
       createdAt: v.createdAt.toISOString(),
       decisions: v.decisions.map((d) => ({
         id: d.id,

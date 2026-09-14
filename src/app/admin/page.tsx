@@ -12,9 +12,15 @@ export default async function AdminPage() {
 
   return (
     <AppShell user={{ name: user.name, role: user.role }}>
-      <h1 className="mb-6 text-xl font-semibold">Administração</h1>
+      <header className="mb-5">
+        <h1 className="text-xl font-bold tracking-tight">Administração</h1>
+        <p className="mt-1 text-sm text-muted">
+          Configure o estilo do jornal, o template da arte e quem tem acesso.
+        </p>
+      </header>
+
       {isStaff ? (
-        <div className="card p-8 text-center text-gray-500">
+        <div className="card px-6 py-12 text-center text-muted">
           Área restrita a editores/gerentes e administradores.
         </div>
       ) : (

@@ -19,8 +19,67 @@ export const POST_STATUS = {
 } as const;
 export type PostStatus = (typeof POST_STATUS)[keyof typeof POST_STATUS];
 
-export const SOURCE_TYPES = ["photo", "text", "link"] as const;
+export const SOURCE_TYPES = ["photo", "text", "link", "document"] as const;
 export type SourceType = (typeof SOURCE_TYPES)[number];
+
+/**
+ * Créditos/marcações do post (@perfil). O emoji vai na legenda antes do @,
+ * no padrão da redação: "📸 @fotografo".
+ */
+export const CREDIT_TYPES = [
+  { id: "photo", emoji: "📸", label: "Fotografia feita por" },
+  { id: "source", emoji: "🗣️", label: "Fonte da notícia" },
+  { id: "video", emoji: "🎥", label: "Vídeo feito por" },
+  { id: "report", emoji: "✍️", label: "Apuração / reportagem de" },
+  { id: "partner", emoji: "🤝", label: "Parceria / colaboração" },
+  { id: "mention", emoji: "@", label: "Apenas marcar o perfil" },
+] as const;
+
+export type CreditTypeId = (typeof CREDIT_TYPES)[number]["id"];
+
+export interface Credit {
+  type: CreditTypeId;
+  handle: string;
+}
+
+export function creditEmoji(type: CreditTypeId): string {
+  return CREDIT_TYPES.find((c) => c.id === type)?.emoji ?? "@";
+}
+
+export function creditLabel(type: CreditTypeId): string {
+  return CREDIT_TYPES.find((c) => c.id === type)?.label ?? type;
+}
+
+/** Normaliza o @ digitado pelo usuário (aceita com ou sem arroba). */
+export function normalizeHandle(raw: string): string {
+  const clean = raw.trim().replace(/^@+/, "").replace(/\s+/g, "");
+  return clean ? `@${clean}` : "";
+}
+
+/** Linha de créditos como vai na legenda: "📸 @fulano". */
+export function formatCredit(c: Credit): string {
+  const handle = normalizeHandle(c.handle);
+  if (!handle) return "";
+  return c.type === "mention" ? handle : `${creditEmoji(c.type)} ${handle}`;
+}
+
+/**
+ * Ordena templates para exibição/seleção padrão: formatos mais "retrato"
+ * primeiro (4:5 antes de 1:1) — é o padrão da redação e por isso o que
+ * aparece pré-selecionado no editor de arte. Baseado na proporção real
+ * (altura/largura), não na ordem de criação, então continua correto mesmo
+ * se um template for recriado ou a ordem de cadastro mudar.
+ */
+export function sortTemplatesByFormat<
+  T extends { canvasWidth: number; canvasHeight: number; createdAt: Date | string },
+>(templates: T[]): T[] {
+  return [...templates].sort((a, b) => {
+    const ratioA = a.canvasHeight / a.canvasWidth;
+    const ratioB = b.canvasHeight / b.canvasWidth;
+    if (ratioA !== ratioB) return ratioB - ratioA; // mais alto (retrato) primeiro
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  });
+}
 
 export const VERSION_ORIGINS = [
   "ai_generated",

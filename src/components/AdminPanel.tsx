@@ -1,14 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  apiGet,
-  apiPost,
-  apiPut,
-  apiPatch,
-  apiDelete,
-} from "@/lib/api-client";
+import { apiGet, apiPost, apiPatch, apiDelete } from "@/lib/api-client";
 import { ROLE_LABELS, USER_ROLES, type UserRole } from "@/lib/domain";
+import { TemplateBuilder } from "./TemplateBuilder";
+import { Tooltip } from "./Tooltip";
 
 type Tab = "style" | "templates" | "users" | "keys";
 
@@ -17,30 +13,32 @@ export function AdminPanel({ role }: { role: UserRole }) {
   const [tab, setTab] = useState<Tab>("style");
 
   const tabs: { id: Tab; label: string; adminOnly?: boolean }[] = [
-    { id: "style", label: "Style reference" },
+    { id: "style", label: "Estilo do jornal" },
     { id: "templates", label: "Templates" },
     { id: "users", label: "Usuários", adminOnly: true },
     { id: "keys", label: "API keys", adminOnly: true },
   ];
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap gap-2">
-        {tabs
-          .filter((t) => !t.adminOnly || isAdmin)
-          .map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-                tab === t.id
-                  ? "bg-brand-600 text-white"
-                  : "bg-white text-gray-600 hover:bg-gray-100"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
+    <div className="space-y-5">
+      <div className="-mx-4 overflow-x-auto px-4">
+        <div className="flex w-max gap-2">
+          {tabs
+            .filter((t) => !t.adminOnly || isAdmin)
+            .map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className={`whitespace-nowrap rounded-xl px-3.5 py-2 text-sm font-medium transition-colors ${
+                  tab === t.id
+                    ? "bg-brand-500 text-white"
+                    : "bg-elevated text-muted hover:text-ink"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+        </div>
       </div>
 
       {tab === "style" && <StyleSection />}
@@ -64,58 +62,165 @@ function useAsyncError() {
   return { error, wrap };
 }
 
-// ── Style reference ──────────────────────────────────────────
+// ── Estilo do jornal (exemplos reais) ────────────────────────
+const TITLE_MAX = 69;
+const SUBTITLE_MAX = 149;
+
+interface StyleExample {
+  id: string;
+  title: string | null;
+  subtitle: string | null;
+  caption: string | null;
+}
+
+const EMPTY_FORM = { title: "", subtitle: "", caption: "" };
+
 function StyleSection() {
   const { error, wrap } = useAsyncError();
-  const [form, setForm] = useState({
-    exampleTitle: "",
-    exampleShortNews: "",
-    exampleCaption: "",
-    exampleArtText: "",
-  });
-  const [saved, setSaved] = useState(false);
+  const [examples, setExamples] = useState<StyleExample[]>([]);
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [adding, setAdding] = useState(false);
 
+  const load = () =>
+    apiGet<{ examples: StyleExample[] }>("/api/style-examples").then((d) =>
+      setExamples(d.examples),
+    );
   useEffect(() => {
-    apiGet<{ style: typeof form | null }>("/api/style-reference").then((d) => {
-      if (d.style) setForm({ ...form, ...d.style });
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    load();
   }, []);
 
-  const save = () =>
+  const add = () =>
     wrap(async () => {
-      await apiPut("/api/style-reference", form);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      await apiPost("/api/style-examples", form);
+      setForm(EMPTY_FORM);
+      setAdding(false);
+      await load();
+    });
+
+  const remove = (id: string) =>
+    wrap(async () => {
+      await apiDelete(`/api/style-examples/${id}`);
+      await load();
     });
 
   return (
-    <div className="card max-w-2xl space-y-4 p-6">
-      <p className="text-sm text-gray-500">
-        Um único exemplo de referência que a IA imita (tom, não conteúdo).
-      </p>
-      {(
-        [
-          ["exampleTitle", "Título de exemplo"],
-          ["exampleShortNews", "Notícia curta de exemplo"],
-          ["exampleCaption", "Legenda de exemplo"],
-          ["exampleArtText", "Texto de arte de exemplo"],
-        ] as const
-      ).map(([key, label]) => (
-        <div key={key}>
-          <label className="label">{label}</label>
-          <textarea
-            className="input"
-            rows={2}
-            value={form[key]}
-            onChange={(e) => setForm({ ...form, [key]: e.target.value })}
-          />
-        </div>
+    <div className="max-w-3xl space-y-4">
+      <div className="alert-info">
+        Cadastre <strong>posts reais do seu jornal</strong> como referência. A IA usa
+        todos eles para aprender o <strong>tom e o formato</strong> — nunca copia o
+        conteúdo. Quanto mais variados os exemplos, melhor o resultado.
+      </div>
+
+      {/* Exemplos cadastrados */}
+      {examples.map((ex, i) => (
+        <article key={ex.id} className="card p-4">
+          <header className="mb-3 flex items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold">Exemplo {i + 1}</h3>
+            <button className="btn-danger btn-sm" onClick={() => remove(ex.id)}>
+              Remover
+            </button>
+          </header>
+          <dl className="space-y-2.5 text-sm">
+            <div>
+              <dt className="text-[11px] font-semibold uppercase tracking-wider text-faint">
+                Título na imagem
+              </dt>
+              <dd className="font-art text-ink">{ex.title || "—"}</dd>
+            </div>
+            <div>
+              <dt className="text-[11px] font-semibold uppercase tracking-wider text-faint">
+                Subtítulo na imagem
+              </dt>
+              <dd className="font-art text-ink">{ex.subtitle || "—"}</dd>
+            </div>
+            <div>
+              <dt className="text-[11px] font-semibold uppercase tracking-wider text-faint">
+                Legenda
+              </dt>
+              <dd className="whitespace-pre-wrap text-muted">{ex.caption || "—"}</dd>
+            </div>
+          </dl>
+        </article>
       ))}
-      {error && <p className="text-sm text-red-600">{error}</p>}
-      <button className="btn-primary" onClick={save}>
-        {saved ? "Salvo ✓" : "Salvar"}
-      </button>
+
+      {/* Novo exemplo */}
+      {adding ? (
+        <div className="card space-y-4 p-4">
+          <h3 className="text-sm font-semibold">Novo exemplo</h3>
+
+          <Counted
+            id="ex-title" label="Título na imagem" max={TITLE_MAX}
+            value={form.title} onChange={(v) => setForm({ ...form, title: v })}
+            placeholder="Tragédia em BH: acidente entre motos deixa dois mortos"
+            tip="A manchete escrita SOBRE a foto. Curta e direta, no máximo 69 caracteres."
+            where="Aparece dentro da arte, na parte de cima do bloco de texto"
+          />
+
+          <Counted
+            id="ex-sub" label="Subtítulo na imagem" max={SUBTITLE_MAX} rows={2}
+            value={form.subtitle} onChange={(v) => setForm({ ...form, subtitle: v })}
+            placeholder="Duas pessoas morreram em acidente na José Cândido da Silveira."
+            tip="Uma frase logo abaixo do título, com um detalhe que o título não disse. Máximo 149 caracteres."
+            where="Aparece dentro da arte, logo abaixo do título"
+          />
+
+          <div>
+            <label className="label" htmlFor="ex-caption">
+              Legenda do Instagram
+              <Tooltip
+                text="O texto completo do post, com os parágrafos, os créditos (📸 @fulano) e as hashtags no fim — exatamente como sua redação publica."
+                where="Vai publicada embaixo da imagem, no Instagram"
+              />
+            </label>
+            <textarea
+              id="ex-caption" className="input min-h-[10rem] resize-y"
+              value={form.caption}
+              onChange={(e) => setForm({ ...form, caption: e.target.value })}
+              placeholder={"Um grave acidente envolvendo duas motocicletas…\n\n📸 @fotografo\n\n#BH #Acidente"}
+            />
+          </div>
+
+          {error && <p className="alert-error">{error}</p>}
+          <div className="flex flex-wrap gap-2">
+            <button className="btn-primary" onClick={add}>Salvar exemplo</button>
+            <button className="btn-subtle" onClick={() => setAdding(false)}>Cancelar</button>
+          </div>
+        </div>
+      ) : (
+        <button className="btn-ghost w-full" onClick={() => setAdding(true)}>
+          + Adicionar exemplo
+        </button>
+      )}
+
+      {error && !adding && <p className="alert-error">{error}</p>}
+    </div>
+  );
+}
+
+function Counted({
+  id, label, value, onChange, max, rows = 1, placeholder, tip, where,
+}: {
+  id: string; label: string; value: string;
+  onChange: (v: string) => void; max: number;
+  rows?: number; placeholder?: string; tip: string; where?: string;
+}) {
+  const over = value.length > max;
+  return (
+    <div>
+      <div className="flex items-baseline justify-between">
+        <label className="label" htmlFor={id}>
+          {label}
+          <Tooltip text={tip} where={where} />
+        </label>
+        <span className={`text-xs tabular-nums ${over ? "text-red-400" : "text-faint"}`}>
+          {value.length}/{max}
+        </span>
+      </div>
+      <textarea
+        id={id} className="input resize-y font-art" rows={rows}
+        value={value} maxLength={max} placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+      />
     </div>
   );
 }
@@ -131,21 +236,7 @@ interface Template {
 }
 
 function TemplatesSection() {
-  const { error, wrap } = useAsyncError();
   const [templates, setTemplates] = useState<Template[]>([]);
-  const [overlayUrl, setOverlayUrl] = useState("");
-  const [name, setName] = useState("");
-  const [size, setSize] = useState({ w: 1080, h: 1080 });
-  const [photoSlot, setPhotoSlot] = useState({ x: 0, y: 0, width: 1080, height: 720 });
-  const [textSlot, setTextSlot] = useState({
-    x: 60,
-    y: 780,
-    width: 960,
-    height: 240,
-    fontSize: 64,
-    color: "#ffffff",
-    align: "left" as "left" | "center" | "right",
-  });
 
   const load = () =>
     apiGet<{ templates: Template[] }>("/api/art-templates?all=1").then((d) =>
@@ -155,116 +246,44 @@ function TemplatesSection() {
     load();
   }, []);
 
-  const uploadOverlay = (file: File) =>
-    wrap(async () => {
-      const fd = new FormData();
-      fd.append("file", file);
-      const { url } = await apiPost<{ url: string }>("/api/upload", fd);
-      setOverlayUrl(url);
-    });
-
-  const create = () =>
-    wrap(async () => {
-      await apiPost("/api/art-templates", {
-        name,
-        canvasWidth: size.w,
-        canvasHeight: size.h,
-        overlayAssetUrl: overlayUrl,
-        photoSlot,
-        textSlot,
-      });
-      setName("");
-      setOverlayUrl("");
-      await load();
-    });
-
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
-      <div className="card space-y-4 p-6">
-        <h3 className="font-semibold">Novo template</h3>
-        <div>
-          <label className="label">Nome</label>
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <NumField label="Largura" value={size.w} onChange={(v) => setSize({ ...size, w: v })} />
-          <NumField label="Altura" value={size.h} onChange={(v) => setSize({ ...size, h: v })} />
-        </div>
-
-        <div>
-          <label className="label">Overlay (PNG transparente onde a foto entra)</label>
-          <input
-            type="file"
-            accept="image/png"
-            onChange={(e) => e.target.files?.[0] && uploadOverlay(e.target.files[0])}
-            className="block w-full text-sm"
-          />
-          {overlayUrl && <p className="mt-1 text-xs text-emerald-600">overlay enviado ✓</p>}
-        </div>
-
-        <fieldset className="rounded-lg border border-gray-200 p-3">
-          <legend className="px-1 text-xs font-medium text-gray-500">Slot da foto</legend>
-          <div className="grid grid-cols-4 gap-2">
-            <NumField label="x" value={photoSlot.x} onChange={(v) => setPhotoSlot({ ...photoSlot, x: v })} />
-            <NumField label="y" value={photoSlot.y} onChange={(v) => setPhotoSlot({ ...photoSlot, y: v })} />
-            <NumField label="w" value={photoSlot.width} onChange={(v) => setPhotoSlot({ ...photoSlot, width: v })} />
-            <NumField label="h" value={photoSlot.height} onChange={(v) => setPhotoSlot({ ...photoSlot, height: v })} />
-          </div>
-        </fieldset>
-
-        <fieldset className="rounded-lg border border-gray-200 p-3">
-          <legend className="px-1 text-xs font-medium text-gray-500">Slot do texto</legend>
-          <div className="grid grid-cols-4 gap-2">
-            <NumField label="x" value={textSlot.x} onChange={(v) => setTextSlot({ ...textSlot, x: v })} />
-            <NumField label="y" value={textSlot.y} onChange={(v) => setTextSlot({ ...textSlot, y: v })} />
-            <NumField label="w" value={textSlot.width} onChange={(v) => setTextSlot({ ...textSlot, width: v })} />
-            <NumField label="fonte px" value={textSlot.fontSize} onChange={(v) => setTextSlot({ ...textSlot, fontSize: v })} />
-          </div>
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            <div>
-              <label className="label">Cor</label>
-              <input type="color" className="h-9 w-full rounded" value={textSlot.color} onChange={(e) => setTextSlot({ ...textSlot, color: e.target.value })} />
-            </div>
-            <div>
-              <label className="label">Alinhamento</label>
-              <select className="input" value={textSlot.align} onChange={(e) => setTextSlot({ ...textSlot, align: e.target.value as "left" | "center" | "right" })}>
-                <option value="left">esquerda</option>
-                <option value="center">centro</option>
-                <option value="right">direita</option>
-              </select>
-            </div>
-          </div>
-        </fieldset>
-
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        <button className="btn-primary" onClick={create} disabled={!name || !overlayUrl}>
-          Criar template
-        </button>
+    <div className="space-y-6">
+      <div className="card p-4 sm:p-5">
+        <TemplateBuilder onCreated={load} />
       </div>
 
-      <div className="space-y-3">
-        <h3 className="font-semibold">Templates ({templates.length})</h3>
-        {templates.map((t) => (
-          <div key={t.id} className="card flex items-center gap-3 p-3">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={t.overlayAssetUrl} alt="" className="h-14 w-14 rounded bg-gray-100 object-contain" />
-            <div className="flex-1">
-              <div className="text-sm font-medium">{t.name}</div>
-              <div className="text-xs text-gray-500">
-                {t.canvasWidth}×{t.canvasHeight} · {t.isActive ? "ativo" : "inativo"}
+      <div>
+        <h3 className="mb-3 text-sm font-semibold">
+          Templates cadastrados ({templates.length})
+        </h3>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {templates.map((t) => (
+            <div key={t.id} className="card flex items-center gap-3 p-3">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={t.overlayAssetUrl}
+                alt=""
+                className="h-14 w-14 shrink-0 rounded-lg bg-black object-contain"
+              />
+              <div className="min-w-0">
+                <div className="truncate text-sm font-medium">{t.name}</div>
+                <div className="text-xs text-muted">
+                  {t.canvasWidth}×{t.canvasHeight} ·{" "}
+                  {t.isActive ? "ativo" : "inativo"}
+                </div>
               </div>
             </div>
-          </div>
-        ))}
-        {templates.length === 0 && (
-          <p className="text-sm text-gray-500">Nenhum template ainda.</p>
-        )}
+          ))}
+          {templates.length === 0 && (
+            <p className="text-sm text-muted">Nenhum template ainda.</p>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-// ── Users ────────────────────────────────────────────────────
+// ── Usuários ─────────────────────────────────────────────────
 interface AdminUser {
   id: string;
   name: string;
@@ -277,10 +296,7 @@ function UsersSection() {
   const { error, wrap } = useAsyncError();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [form, setForm] = useState({
-    name: "",
-    email: "",
-    password: "",
-    role: "staff" as UserRole,
+    name: "", email: "", password: "", role: "staff" as UserRole,
   });
 
   const load = () =>
@@ -303,46 +319,44 @@ function UsersSection() {
     });
 
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
-      <div className="card space-y-3 p-6">
-        <h3 className="font-semibold">Novo usuário</h3>
-        <input className="input" placeholder="Nome" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-        <input className="input" placeholder="E-mail" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-        <input className="input" placeholder="Senha (mín. 8)" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
-        <select className="input" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as UserRole })}>
+    <div className="grid gap-5 lg:grid-cols-2">
+      <div className="card space-y-3 p-4">
+        <h3 className="text-sm font-semibold">Novo usuário</h3>
+        <input className="input" placeholder="Nome" value={form.name}
+          onChange={(e) => setForm({ ...form, name: e.target.value })} />
+        <input className="input" placeholder="E-mail" type="email" value={form.email}
+          onChange={(e) => setForm({ ...form, email: e.target.value })} />
+        <input className="input" placeholder="Senha (mín. 8)" type="password" value={form.password}
+          onChange={(e) => setForm({ ...form, password: e.target.value })} />
+        <select className="input" value={form.role}
+          onChange={(e) => setForm({ ...form, role: e.target.value as UserRole })}>
           {USER_ROLES.map((r) => (
-            <option key={r} value={r}>
-              {ROLE_LABELS[r]}
-            </option>
+            <option key={r} value={r}>{ROLE_LABELS[r]}</option>
           ))}
         </select>
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        <button className="btn-primary" onClick={create}>
-          Criar usuário
-        </button>
+        {error && <p className="alert-error">{error}</p>}
+        <button className="btn-primary" onClick={create}>Criar usuário</button>
       </div>
 
       <div className="space-y-2">
-        <h3 className="font-semibold">Usuários ({users.length})</h3>
+        <h3 className="text-sm font-semibold">Usuários ({users.length})</h3>
         {users.map((u) => (
-          <div key={u.id} className="card flex items-center gap-3 p-3">
-            <div className="flex-1">
-              <div className="text-sm font-medium">{u.name}</div>
-              <div className="text-xs text-gray-500">{u.email}</div>
+          <div key={u.id} className="card flex flex-wrap items-center gap-2 p-3">
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-medium">{u.name}</div>
+              <div className="truncate text-xs text-muted">{u.email}</div>
             </div>
             <select
-              className="input w-auto text-xs"
+              className="input w-auto py-1.5 text-xs"
               value={u.role}
               onChange={(e) => update(u.id, { role: e.target.value as UserRole })}
             >
               {USER_ROLES.map((r) => (
-                <option key={r} value={r}>
-                  {ROLE_LABELS[r]}
-                </option>
+                <option key={r} value={r}>{ROLE_LABELS[r]}</option>
               ))}
             </select>
             <button
-              className={u.active ? "btn-ghost text-xs" : "btn-success text-xs"}
+              className={u.active ? "btn-ghost btn-sm" : "btn-success btn-sm"}
               onClick={() => update(u.id, { active: !u.active })}
             >
               {u.active ? "Desativar" : "Ativar"}
@@ -377,9 +391,7 @@ function KeysSection() {
 
   const create = () =>
     wrap(async () => {
-      const { key } = await apiPost<{ key: { secret: string } }>("/api/api-keys", {
-        name,
-      });
+      const { key } = await apiPost<{ key: { secret: string } }>("/api/api-keys", { name });
       setSecret(key.secret);
       setName("");
       await load();
@@ -392,20 +404,24 @@ function KeysSection() {
     });
 
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
-      <div className="card space-y-3 p-6">
-        <h3 className="font-semibold">Nova API key</h3>
-        <input className="input" placeholder="Nome da chave" value={name} onChange={(e) => setName(e.target.value)} />
-        {error && <p className="text-sm text-red-600">{error}</p>}
+    <div className="grid gap-5 lg:grid-cols-2">
+      <div className="card space-y-3 p-4">
+        <h3 className="flex items-center gap-1.5 text-sm font-semibold">
+          Nova API key
+          <Tooltip text="Para integrar outro sistema da redação com o JornIA (ex.: enviar pautas automaticamente). Não é necessária para o uso normal pelo site." />
+        </h3>
+        <input className="input" placeholder="Nome da chave" value={name}
+          onChange={(e) => setName(e.target.value)} />
+        {error && <p className="alert-error">{error}</p>}
         <button className="btn-primary" onClick={create} disabled={!name}>
           Gerar chave
         </button>
         {secret && (
-          <div className="rounded-lg bg-amber-50 p-3 text-sm">
-            <p className="font-medium text-amber-800">
-              Copie agora — não será exibida novamente:
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
+            <p className="text-sm font-medium text-amber-300">
+              Copie agora — não será exibida de novo:
             </p>
-            <code className="mt-1 block break-all rounded bg-white p-2 text-xs">
+            <code className="mt-1.5 block break-all rounded-lg bg-bg p-2 text-xs">
               {secret}
             </code>
           </div>
@@ -413,47 +429,24 @@ function KeysSection() {
       </div>
 
       <div className="space-y-2">
-        <h3 className="font-semibold">Chaves ({keys.length})</h3>
+        <h3 className="text-sm font-semibold">Chaves ({keys.length})</h3>
         {keys.map((k) => (
           <div key={k.id} className="card flex items-center gap-3 p-3">
-            <div className="flex-1">
-              <div className="text-sm font-medium">{k.name}</div>
-              <div className="text-xs text-gray-500">
-                {k.revokedAt ? "revogada" : "ativa"} · criada em{" "}
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-medium">{k.name}</div>
+              <div className="text-xs text-muted">
+                {k.revokedAt ? "revogada" : "ativa"} ·{" "}
                 {new Date(k.createdAt).toLocaleDateString("pt-BR")}
               </div>
             </div>
             {!k.revokedAt && (
-              <button className="btn-danger text-xs" onClick={() => revoke(k.id)}>
+              <button className="btn-danger btn-sm" onClick={() => revoke(k.id)}>
                 Revogar
               </button>
             )}
           </div>
         ))}
       </div>
-    </div>
-  );
-}
-
-// ── util ─────────────────────────────────────────────────────
-function NumField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  onChange: (v: number) => void;
-}) {
-  return (
-    <div>
-      <label className="label">{label}</label>
-      <input
-        type="number"
-        className="input"
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-      />
     </div>
   );
 }
