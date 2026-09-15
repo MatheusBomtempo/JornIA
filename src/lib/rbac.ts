@@ -43,6 +43,21 @@ export function canEditPost(
   return post.createdBy === user.id;
 }
 
+/**
+ * Revisão por pares: manager/admin revisam (e publicam) qualquer post.
+ * Staff pode revisar (aprovar/recusar/pedir reescrita) posts de OUTROS
+ * jornalistas — nunca o próprio, senão a revisão por pares vira decoração.
+ * Ver PEER_APPROVALS_NEEDED: uma aprovação de staff sozinha não publica,
+ * precisa se somar a outra de um colega diferente (ou vir de manager/admin).
+ */
+export function canReviewPost(
+  user: HasRole,
+  post: { createdBy: string },
+): boolean {
+  if (user.role === "admin" || user.role === "manager") return true;
+  return user.role === "staff" && post.createdBy !== user.id;
+}
+
 function labelRole(role: UserRole): string {
   return { admin: "admin", manager: "manager", staff: "staff" }[role];
 }

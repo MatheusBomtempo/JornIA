@@ -5,15 +5,16 @@ import { scrapeUrl } from "../scrape";
 import { compactSource } from "../compact";
 import { renderAndStore } from "../render";
 import { publishToInstagram } from "../instagram";
-import { canEditPost, can } from "../rbac";
-import { ApiError, badRequest, forbidden, notFound } from "../http";
-import { POST_STATUS, PUBLICATION_STATUS, type Credit } from "../domain";
+import { canEditPost, canReviewPost, can } from "../rbac";
+import { ApiError, badRequest, conflict, forbidden, notFound } from "../http";
+import { POST_STATUS, PUBLICATION_STATUS, PEER_APPROVALS_NEEDED, type Credit } from "../domain";
 import type { z } from "zod";
 import type {
   createPostSchema,
   saveArtSchema,
   regenerateSchema,
   editVersionSchema,
+  addPhotoSchema,
 } from "../validation";
 import type { User, PostVersion } from "@prisma/client";
 import type { CompactResult } from "../compact";
@@ -22,6 +23,7 @@ type CreatePostInput = z.infer<typeof createPostSchema>;
 type SaveArtInput = z.infer<typeof saveArtSchema>;
 type RegenerateInput = z.infer<typeof regenerateSchema>;
 type EditVersionInput = z.infer<typeof editVersionSchema>;
+type AddPhotoInput = z.infer<typeof addPhotoSchema>;
 
 async function nextVersionNumber(postId: string): Promise<number> {
   const last = await prisma.postVersion.findFirst({
@@ -113,6 +115,9 @@ export async function createPostWithAi(user: User, input: CreatePostInput) {
         title: content.title,
         subtitle: content.subtitle,
         instagramCaption: content.instagramCaption,
+        imageSuggestions: content.imageSuggestions.length
+          ? content.imageSuggestions
+          : undefined,
         aiProvider: content.meta?.provider,
         aiModel: content.meta?.model,
         // pré-seleciona a primeira foto, se houver
@@ -198,6 +203,37 @@ export async function saveArtAndRender(
   return getPostDetail(postId);
 }
 
+// ── 2b) Anexar foto extra a um post já criado ────────────────
+/**
+ * O jornalista pode decidir a foto DEPOIS de gerar o texto: achou uma opção
+ * melhor, baixou uma do Google Imagens ou de um banco gratuito a partir de
+ * uma sugestão da IA. Isso só adiciona uma foto à lista do post — nunca
+ * troca nem remove a que já estava lá; a escolha de qual usar continua sendo
+ * manual, no editor de arte.
+ */
+export async function addPhotoToPost(
+  user: User,
+  postId: string,
+  input: AddPhotoInput,
+) {
+  const post = await prisma.post.findUnique({
+    where: { id: postId },
+    include: { _count: { select: { photos: true } } },
+  });
+  if (!post) throw notFound("Post não encontrado.");
+  if (!canEditPost(user, post)) throw forbidden("Você não pode editar este post.");
+
+  const photo = await prisma.postPhoto.create({
+    data: {
+      postId,
+      storageUrl: input.storageUrl,
+      orderIndex: post._count.photos,
+    },
+  });
+
+  return { photo, post: await getPostDetail(postId) };
+}
+
 // ── 3) Regenerar (novo ciclo de IA, nova versão) ─────────────
 export async function regeneratePost(
   user: User,
@@ -206,8 +242,11 @@ export async function regeneratePost(
 ) {
   const post = await prisma.post.findUnique({ where: { id: postId } });
   if (!post) throw notFound("Post não encontrado.");
-  // staff pode refazer as próprias; manager/admin qualquer uma.
-  if (!canEditPost(user, post)) throw forbidden("Sem permissão para refazer.");
+  // staff pode refazer as próprias; manager/admin qualquer uma; um colega
+  // (revisor por pares) também pode pedir reescrita na pauta de outro staff.
+  if (!canEditPost(user, post) && !canReviewPost(user, post)) {
+    throw forbidden("Sem permissão para refazer.");
+  }
 
   const prev = await latestVersion(postId);
 
@@ -238,6 +277,9 @@ export async function regeneratePost(
       title: content.title,
       subtitle: content.subtitle,
       instagramCaption: content.instagramCaption,
+      imageSuggestions: content.imageSuggestions.length
+        ? content.imageSuggestions
+        : undefined,
       aiProvider: content.meta?.provider,
       aiModel: content.meta?.model,
       // carrega escolhas de arte da versão anterior (arte precisa ser re-renderizada)
@@ -250,8 +292,8 @@ export async function regeneratePost(
     },
   });
 
-  // Se veio de uma revisão, registra a decisão.
-  if (can.review(user)) {
+  // Se veio de uma revisão (manager/admin ou colega revisando), registra a decisão.
+  if (canReviewPost(user, post)) {
     await prisma.reviewDecision.create({
       data: {
         postVersionId: prev.id,
@@ -300,6 +342,7 @@ export async function editVersionManually(
       title: input.title ?? source.title,
       subtitle: input.subtitle ?? source.subtitle,
       instagramCaption: input.instagramCaption ?? source.instagramCaption,
+      imageSuggestions: source.imageSuggestions ?? undefined,
       selectedPhotoId: source.selectedPhotoId,
       artTemplateId: source.artTemplateId,
       photoTransform: source.photoTransform ?? undefined,
@@ -359,12 +402,21 @@ export async function editVersionManually(
 }
 
 // ── 5) Aprovar → publicar no Instagram ───────────────────────
+/**
+ * Manager/admin aprovam com autoridade própria: 1 clique publica na hora.
+ * Staff não pode aprovar a própria pauta — só a de um colega (revisão por
+ * pares) — e sozinho não publica: o voto fica registrado e só quando
+ * PEER_APPROVALS_NEEDED colegas distintos tiverem aprovado esta versão é
+ * que a publicação de fato dispara.
+ */
 export async function approveAndPublish(
   user: User,
   postId: string,
   versionId: string,
 ) {
-  if (!can.publish(user)) throw forbidden("Apenas editor/gerente ou admin publicam.");
+  const post = await prisma.post.findUnique({ where: { id: postId } });
+  if (!post) throw notFound("Post não encontrado.");
+  if (!canReviewPost(user, post)) throw forbidden("Você não pode revisar este post.");
 
   const version = await prisma.postVersion.findUnique({
     where: { id: versionId },
@@ -374,9 +426,28 @@ export async function approveAndPublish(
     throw badRequest("A arte ainda não foi renderizada para esta versão.");
   }
 
-  await prisma.reviewDecision.create({
-    data: { postVersionId: versionId, reviewerId: user.id, decision: "approved" },
-  });
+  const isDirect = can.publish(user);
+
+  if (!isDirect) {
+    const already = await prisma.reviewDecision.findFirst({
+      where: { postVersionId: versionId, reviewerId: user.id, decision: "approved" },
+    });
+    if (already) throw conflict("Você já aprovou esta versão.");
+
+    await prisma.reviewDecision.create({
+      data: { postVersionId: versionId, reviewerId: user.id, decision: "approved" },
+    });
+
+    const approvedCount = await prisma.reviewDecision.count({
+      where: { postVersionId: versionId, decision: "approved" },
+    });
+    // Faltam colegas — o voto foi registrado, mas ainda não publica.
+    if (approvedCount < PEER_APPROVALS_NEEDED) return getPostDetail(postId);
+  } else {
+    await prisma.reviewDecision.create({
+      data: { postVersionId: versionId, reviewerId: user.id, decision: "approved" },
+    });
+  }
 
   await prisma.post.update({
     where: { id: postId },
@@ -430,7 +501,11 @@ export async function rejectPost(
   versionId: string,
   reason: string,
 ) {
-  if (!can.review(user)) throw forbidden("Apenas editor/gerente ou admin recusam.");
+  const post = await prisma.post.findUnique({ where: { id: postId } });
+  if (!post) throw notFound("Post não encontrado.");
+  // Uma recusa é sempre imediata (de manager/admin ou de um colega revisor)
+  // — o objetivo é facilitar barrar algo ruim, não também exigir 2 votos pra isso.
+  if (!canReviewPost(user, post)) throw forbidden("Você não pode recusar este post.");
 
   const version = await prisma.postVersion.findUnique({
     where: { id: versionId },

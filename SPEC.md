@@ -204,6 +204,11 @@ GET/POST/DELETE /api-keys              → só admin
 - Sem agendamento — publicação é sempre imediata, sob demanda.
 - Sem geração de imagem por IA — a IA só gera texto.
 - Sem seleção automática de "melhor foto" — o jornalista escolhe e ajusta manualmente.
+- Sugestões de imagem são só links de busca (Google Imagens / banco gratuito) gerados
+  pela IA junto do texto — nunca escolhem, baixam ou publicam foto sozinhas. Prioridade:
+  1) foto enviada pelo jornalista, 2) foto da fonte original, 3) achada via Google,
+  4) achada em banco gratuito, 5) sem foto. Upload aceita drag & drop de imagem OU PDF
+  em qualquer ponto da tela de captura, com o tipo detectado automaticamente.
 - Sem Canva — o template é reproduzido em código (overlay PNG fixo) e composto via Fabric.js (edição) + Sharp (render final).
 - Style guide simplificado — um único exemplo de referência, não uma biblioteca de exemplos.
 - Três tipos de fonte: foto, texto pronto, link (que precisa de scraping antes de ir pra IA).

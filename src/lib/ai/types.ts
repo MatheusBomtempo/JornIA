@@ -38,6 +38,12 @@ export interface GeneratedContent {
   /** Legenda completa do Instagram (com hashtags). */
   instagramCaption: string;
   /**
+   * Exatamente 2 sugestões curtas de busca de imagem (ex.: "viatura polícia
+   * MG"), pra ajudar o jornalista a achar uma foto quando ainda não tem uma.
+   * Puramente auxiliar: nunca escolhe, baixa nem publica imagem sozinha.
+   */
+  imageSuggestions: string[];
+  /**
    * Quem gerou de fato — importante com fallback entre provedores: o post
    * pode ter sido escrito pelo provider principal ou por um dos backups.
    */

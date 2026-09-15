@@ -64,6 +64,17 @@ export const regenerateSchema = z.object({
   guidance: z.string().optional(),
 });
 
+/**
+ * Anexa uma foto extra a um post já criado — cobre os casos em que o
+ * jornalista só decide a foto depois de gerar o texto: achou uma imagem
+ * melhor, baixou uma do Google ou de um banco gratuito a partir das
+ * sugestões da IA. Nunca substitui a foto já enviada sozinha; só adiciona
+ * uma opção a mais pro jornalista escolher no editor de arte.
+ */
+export const addPhotoSchema = z.object({
+  storageUrl: z.string().url(),
+});
+
 export const editVersionSchema = z
   .object({
     title: z.string().max(TITLE_MAX).optional(),

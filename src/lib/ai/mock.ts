@@ -33,6 +33,7 @@ export class MockProvider implements AiProvider {
         "",
         "#JornIA #Teste",
       ].join("\n"),
+      imageSuggestions: ["foto genérica notícia", "cena mock desenvolvimento"],
       meta: { provider: this.name, model: "mock" },
     };
   }

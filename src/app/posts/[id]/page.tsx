@@ -5,7 +5,7 @@ import { prisma } from "@/lib/db";
 import { AppShell } from "@/components/AppShell";
 import { PostWorkspace } from "@/components/PostWorkspace";
 import type { EditorTemplate } from "@/components/ArtEditor";
-import { sortTemplatesByFormat } from "@/lib/domain";
+import { sortTemplatesByFormat, type Credit } from "@/lib/domain";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +47,7 @@ export default async function PostPage({
     sourceType: post.sourceType,
     createdBy: post.createdBy,
     author: { name: post.author.name },
+    credits: (post.credits as Credit[] | null) ?? [],
     photos: post.photos.map((p) => ({ id: p.id, storageUrl: p.storageUrl })),
     versions: post.versions.map((v) => ({
       id: v.id,
@@ -55,6 +56,7 @@ export default async function PostPage({
       title: v.title,
       subtitle: v.subtitle,
       instagramCaption: v.instagramCaption,
+      imageSuggestions: (v.imageSuggestions as string[] | null) ?? [],
       aiProvider: v.aiProvider,
       aiModel: v.aiModel,
       renderedArtUrl: v.renderedArtUrl,
@@ -72,7 +74,7 @@ export default async function PostPage({
         id: d.id,
         decision: d.decision,
         reason: d.reason,
-        reviewer: { name: d.reviewer.name },
+        reviewer: { id: d.reviewer.id, name: d.reviewer.name },
         createdAt: d.createdAt.toISOString(),
       })),
     })),

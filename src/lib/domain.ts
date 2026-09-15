@@ -6,6 +6,14 @@
 export const USER_ROLES = ["admin", "manager", "staff"] as const;
 export type UserRole = (typeof USER_ROLES)[number];
 
+/**
+ * Publicação de post criado por staff (jornalista): admin/manager publicam
+ * com 1 aprovação (própria autoridade); staff sozinho não pode aprovar a
+ * própria pauta, então precisa desse tanto de colegas (jornalistas) pra
+ * garantir revisão por pares antes de ir pro ar.
+ */
+export const PEER_APPROVALS_NEEDED = 2;
+
 /** Estados do post (coluna posts.status). */
 export const POST_STATUS = {
   PROCESSING_AI: "processing_ai",

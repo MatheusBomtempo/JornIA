@@ -89,6 +89,15 @@ texto jornalístico, do fato mais forte para os detalhes.
 3. "instagramCaption" — a legenda completa: 3 a 5 parágrafos curtos, contando
    a notícia inteira em ordem jornalística (fato principal primeiro),
    terminando com créditos (se houver) e hashtags.
+4. "imageSuggestions" — EXATAMENTE 2 sugestões curtas de busca de imagem (3 a
+   6 palavras cada), pra ajudar o jornalista a achar uma foto de capa quando
+   ainda não tem uma. São só termos de busca, nunca uma alegação factual nova:
+   descreva um elemento visual genérico e concreto da história (tipo de
+   viatura/veículo, objeto, cenário, farda), sem inventar detalhe que não
+   esteja na fonte, sem nome de pessoa, sem endereço exato, sem hashtag, sem
+   emoji e sem aspas. Ex.: fonte fala de uma moto roubada → "moto estacionada
+   rua"; fonte fala de apreensão de arma → "arma sobre mesa"; fonte fala de
+   viatura da PM em Barbacena → "viatura polícia militar MG".
 
 IMPORTANTE sobre os limites: são o espaço físico do layout da arte. Texto
 acima do limite é cortado de forma feia; conte os caracteres antes de
@@ -130,7 +139,10 @@ o título aqui
 [SUBTITULO]
 o subtítulo aqui
 [LEGENDA]
-a legenda aqui, podendo ter vários parágrafos`;
+a legenda aqui, podendo ter vários parágrafos
+[SUGESTOES_IMAGEM]
+primeira sugestão de busca
+segunda sugestão de busca`;
 
 export function buildUserPrompt(input: GenerateInput): string {
   const parts: string[] = ["## Fonte"];
@@ -200,7 +212,9 @@ ${credits.join("\n")}`,
 [SUBTITULO]
 (informação nova — causa/dinâmica/consequência; frase completa perto de ${SUBTITLE_MAX} caracteres sem passar; Sentence case, sem emoji)
 [LEGENDA]
-(a notícia completa em parágrafos curtos, fato mais forte primeiro; Sentence case; créditos e hashtags no fim)`,
+(a notícia completa em parágrafos curtos, fato mais forte primeiro; Sentence case; créditos e hashtags no fim)
+[SUGESTOES_IMAGEM]
+(EXATAMENTE 2 linhas, uma sugestão de busca por linha, 3 a 6 palavras, sem hashtag/emoji/aspas)`,
   );
 
   return parts.join("\n");

@@ -170,6 +170,8 @@ model PostVersion {
   subtitleOffset   Json?    @map("subtitle_offset") // { offsetX, offsetY }
   artTemplateId    String?  @map("art_template_id") @db.Uuid
   renderedArtUrl   String?  @map("rendered_art_url")
+  /** Exatamente 2 sugestões de busca de imagem geradas pela IA (ex.: ["viatura polícia MG", "arma sobre mesa"]). Auxiliar — nunca seleciona nem publica foto sozinha. */
+  imageSuggestions Json?    @map("image_suggestions")
   editedBy         String?  @map("edited_by") @db.Uuid
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 

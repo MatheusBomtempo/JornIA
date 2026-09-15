@@ -17,7 +17,7 @@ export function parseGeneratedContent(raw: string): GeneratedContent {
     );
   }
 
-  const { title, subtitle, instagramCaption } = result;
+  const { title, subtitle, instagramCaption, imageSuggestions } = result;
   if (!title || !instagramCaption) {
     throw new Error(
       "Resposta da IA incompleta (faltou o título ou a legenda). Tente gerar de novo.",
@@ -29,20 +29,33 @@ export function parseGeneratedContent(raw: string): GeneratedContent {
     title: clip(title, TITLE_MAX),
     subtitle: clip(subtitle, SUBTITLE_MAX),
     instagramCaption,
+    // Auxiliar — se a IA não trouxer (ou trouxer errado), segue sem sugestão
+    // em vez de inventar uma; nunca bloqueia a geração do post por isso.
+    imageSuggestions: imageSuggestions.slice(0, 2),
   };
 }
 
 // ── Formato delimitado (principal) ───────────────────────────
 function parseDelimited(s: string): GeneratedContent | null {
   const re =
-    /\[\s*T[ÍI]TULO\s*\]([\s\S]*?)\[\s*SUBT[ÍI]TULO\s*\]([\s\S]*?)\[\s*LEGENDA\s*\]([\s\S]*)$/i;
+    /\[\s*T[ÍI]TULO\s*\]([\s\S]*?)\[\s*SUBT[ÍI]TULO\s*\]([\s\S]*?)\[\s*LEGENDA\s*\]([\s\S]*?)(?:\[\s*SUGEST[ÕO]ES[_ ]IMAGEM\s*\]([\s\S]*))?$/i;
   const m = s.match(re);
   if (!m) return null;
   return {
     title: clean(m[1]),
     subtitle: clean(m[2]),
     instagramCaption: clean(m[3]),
+    imageSuggestions: parseSuggestionLines(m[4] ?? ""),
   };
+}
+
+/** Cada linha não vazia é uma sugestão; tira marcadores de lista e aspas. */
+function parseSuggestionLines(block: string): string[] {
+  return block
+    .split("\n")
+    .map((line) => line.trim().replace(/^[-*•\d.)\s]+/, "").replace(/^["']|["']$/g, "").trim())
+    .filter(Boolean)
+    .slice(0, 2);
 }
 
 /** Remove parênteses de instrução que alguns modelos copiam do template. */
@@ -77,7 +90,14 @@ function parseJson(s: string): GeneratedContent | null {
     instagramCaption: str(
       obj.instagramCaption ?? obj.instagram_caption ?? obj.caption,
     ),
+    imageSuggestions: strArray(
+      obj.imageSuggestions ?? obj.image_suggestions,
+    ).slice(0, 2),
   };
+}
+
+function strArray(v: unknown): string[] {
+  return Array.isArray(v) ? v.map(str).filter(Boolean) : [];
 }
 
 function escapeRawNewlinesInStrings(json: string): string {

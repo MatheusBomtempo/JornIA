@@ -1,13 +1,30 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiPost, apiPatch } from "@/lib/api-client";
 import { ArtEditor, type EditorTemplate, type EditorPhoto } from "./ArtEditor";
 import { InstagramPreview } from "./InstagramPreview";
 import { StatusBadge } from "./StatusBadge";
+import { Stepper } from "./Stepper";
 import { BusyLabel, useElapsedSeconds } from "./Spinner";
-import { POST_STATUS, type UserRole } from "@/lib/domain";
+import {
+  POST_STATUS,
+  PEER_APPROVALS_NEEDED,
+  formatCredit,
+  type Credit,
+  type UserRole,
+} from "@/lib/domain";
+
+const MAX_PHOTO_MB = 15;
+
+function googleImagesUrl(query: string): string {
+  return `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(query)}`;
+}
+
+function freePhotosUrl(query: string): string {
+  return `https://www.pexels.com/search/${encodeURIComponent(query)}/`;
+}
 
 interface Version {
   id: string;
@@ -16,6 +33,7 @@ interface Version {
   title: string | null;
   subtitle: string | null;
   instagramCaption: string | null;
+  imageSuggestions: string[];
   aiProvider: string | null;
   aiModel: string | null;
   renderedArtUrl: string | null;
@@ -29,7 +47,7 @@ interface Version {
     id: string;
     decision: string;
     reason: string | null;
-    reviewer: { name: string };
+    reviewer: { id: string; name: string };
     createdAt: string;
   }[];
 }
@@ -40,6 +58,7 @@ interface PostDetail {
   sourceType: string;
   createdBy: string;
   author: { name: string };
+  credits: Credit[];
   photos: EditorPhoto[];
   versions: Version[];
 }
@@ -50,15 +69,25 @@ interface Props {
   templates: EditorTemplate[];
 }
 
-type Step = "art" | "review";
+const STEP_ORDER = ["text", "image", "review"] as const;
+type Step = (typeof STEP_ORDER)[number];
+const STEP_LABELS = ["Texto", "Imagem", "Revisão"];
+
 type Panel = null | "rewrite" | "reject" | "text";
 
 export function PostWorkspace({ user, post, templates }: Props) {
   const router = useRouter();
   const current = post.versions[0];
 
-  const canReview = user.role === "manager" || user.role === "admin";
-  const canEdit = canReview || post.createdBy === user.id;
+  // Quem pode editar texto/foto (o autor, ou manager/admin) vs. quem pode
+  // revisar a pauta de OUTRA pessoa (colega jornalista, ou manager/admin).
+  // São poderes diferentes: revisar não dá direito de reescrever o post de
+  // outro à mão, só de aprovar/recusar/pedir que a IA refaça.
+  const isAuthor = post.createdBy === user.id;
+  const isManagerOrAdmin = user.role === "manager" || user.role === "admin";
+  const isPeerReviewer = user.role === "staff" && !isAuthor;
+  const canEdit = isManagerOrAdmin || isAuthor;
+  const canDecide = isManagerOrAdmin || isPeerReviewer;
 
   // Proporção real do template desta versão, pra prévia não cortar o 4:5.
   const currentTemplate = templates.find((t) => t.id === current?.artTemplateId);
@@ -71,10 +100,12 @@ export function PostWorkspace({ user, post, templates }: Props) {
   const naturalStep: Step =
     post.status === POST_STATUS.EDITING_ART ||
     post.status === POST_STATUS.PROCESSING_AI
-      ? "art"
+      ? "image"
       : "review";
   const [stepOverride, setStepOverride] = useState<Step | null>(null);
   const step: Step = stepOverride ?? naturalStep;
+  const stepIndex = STEP_ORDER.indexOf(step);
+  const goToStep = (i: number) => setStepOverride(STEP_ORDER[i]);
 
   const [panel, setPanel] = useState<Panel>(null);
   const [guidance, setGuidance] = useState("");
@@ -87,6 +118,47 @@ export function PostWorkspace({ user, post, templates }: Props) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const elapsed = useElapsedSeconds(!!busy);
+
+  // Foto decidida DEPOIS de gerar o texto (achou uma melhor, baixou do
+  // Google ou de um banco gratuito a partir de uma sugestão da IA). Nunca
+  // troca a foto já enviada sozinha — só some à lista pro jornalista escolher.
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const [photoDragging, setPhotoDragging] = useState(false);
+  const [lastAddedPhotoId, setLastAddedPhotoId] = useState<string | null>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+
+  const addPhoto = useCallback(
+    async (file: File | undefined | null) => {
+      if (!file) return;
+      if (!file.type.startsWith("image/")) {
+        setPhotoError("Aqui só entra imagem (JPEG, PNG ou WebP).");
+        return;
+      }
+      if (file.size > MAX_PHOTO_MB * 1024 * 1024) {
+        setPhotoError(`A imagem passa de ${MAX_PHOTO_MB} MB.`);
+        return;
+      }
+      setPhotoError(null);
+      setPhotoBusy(true);
+      try {
+        const fd = new FormData();
+        fd.append("file", file);
+        const up = await apiPost<{ url: string }>("/api/upload", fd);
+        const { photo } = await apiPost<{ photo: { id: string } }>(
+          `/api/posts/${post.id}/photos`,
+          { storageUrl: up.url },
+        );
+        setLastAddedPhotoId(photo.id);
+        router.refresh();
+      } catch (err) {
+        setPhotoError((err as Error).message);
+      } finally {
+        setPhotoBusy(false);
+      }
+    },
+    [post.id, router],
+  );
 
   async function run(label: string, fn: () => Promise<unknown>) {
     setBusy(label);
@@ -104,7 +176,7 @@ export function PostWorkspace({ user, post, templates }: Props) {
   }
 
   const approve = () =>
-    run("Publicando…", () =>
+    run(isPeerReviewer ? "Registrando aprovação…" : "Publicando…", () =>
       apiPost(`/api/posts/${post.id}/versions/${current.id}/approve`),
     );
 
@@ -128,9 +200,12 @@ export function PostWorkspace({ user, post, templates }: Props) {
   const hasPhotos = post.photos.length > 0;
   const hasTemplates = templates.length > 0;
 
+  const approvals = current?.decisions.filter((d) => d.decision === "approved") ?? [];
+  const myApproval = approvals.find((d) => d.reviewer.id === user.id);
+
   return (
     <div className="space-y-5">
-      {/* Cabeçalho + passos */}
+      {/* Cabeçalho */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <StatusBadge status={post.status} />
         <span className="text-xs text-muted">
@@ -139,66 +214,199 @@ export function PostWorkspace({ user, post, templates }: Props) {
       </div>
 
       {!isFinished && (
-        <ol className="flex items-center gap-2 text-xs font-medium">
-          <StepChip n={1} label="Arte" active={step === "art"} done={step === "review"} />
-          <span className="h-px w-6 bg-line" />
-          <StepChip n={2} label="Revisão" active={step === "review"} />
-        </ol>
+        <div className="space-y-2">
+          <Stepper steps={STEP_LABELS} current={stepIndex} reachable={2} onStepClick={goToStep} />
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              className="btn-subtle btn-sm"
+              disabled={stepIndex === 0}
+              onClick={() => goToStep(stepIndex - 1)}
+            >
+              ← Voltar
+            </button>
+            <button
+              type="button"
+              className="btn-subtle btn-sm"
+              disabled={stepIndex === STEP_ORDER.length - 1}
+              onClick={() => goToStep(stepIndex + 1)}
+            >
+              Avançar →
+            </button>
+          </div>
+        </div>
       )}
 
       {error && <p className="alert-error">{error}</p>}
 
-      {/* ───────────── PASSO 1: ARTE ───────────── */}
-      {step === "art" && (
+      {/* ───────────── PASSO 1: TEXTO ───────────── */}
+      {step === "text" && (
+        <section className="card space-y-4 p-4 sm:p-5">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold">Texto do post</h2>
+              {current?.aiProvider && (
+                <span
+                  className="badge bg-brand-500/10 text-brand-300"
+                  title={current.aiModel ? `Modelo: ${current.aiModel}` : undefined}
+                >
+                  ✨ {aiSourceLabel(current.aiProvider)}
+                </span>
+              )}
+            </div>
+            {canEdit && !isFinished && panel !== "text" && (
+              <button className="btn-ghost btn-sm" onClick={() => setPanel("text")}>
+                Editar
+              </button>
+            )}
+          </div>
+
+          {panel === "text" ? (
+            <div className="space-y-3">
+              <Field label="Título na imagem" value={draft.title} max={69}
+                onChange={(v) => setDraft({ ...draft, title: v })} />
+              <Field label="Subtítulo na imagem" textarea max={149} value={draft.subtitle}
+                onChange={(v) => setDraft({ ...draft, subtitle: v })} />
+              <Field label="Legenda do Instagram" textarea rows={10}
+                value={draft.instagramCaption}
+                onChange={(v) => setDraft({ ...draft, instagramCaption: v })} />
+              <div className="flex flex-wrap gap-2">
+                <button className="btn-primary" onClick={saveText} disabled={!!busy}>
+                  {busy ? <BusyLabel label={busy} seconds={elapsed} /> : "Salvar texto"}
+                </button>
+                <button className="btn-subtle" onClick={() => setPanel(null)}>
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          ) : (
+            <dl className="space-y-3">
+              <Read label="Título na imagem" value={current?.title} art />
+              <Read label="Subtítulo na imagem" value={current?.subtitle} art />
+              <Read label="Legenda do Instagram" value={current?.instagramCaption} />
+            </dl>
+          )}
+
+          {post.credits.length > 0 && (
+            <div className="border-t border-lineSoft pt-3">
+              <dt className="text-[11px] font-semibold uppercase tracking-wider text-faint">
+                Créditos e marcações
+              </dt>
+              <ul className="mt-1 space-y-0.5 text-sm text-ink">
+                {post.credits.map((c, i) => (
+                  <li key={i}>{formatCredit(c)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* ───────────── PASSO 2: IMAGEM ───────────── */}
+      {step === "image" && (
         <section className="card p-4 sm:p-5">
-          <h2 className="mb-1 text-sm font-semibold">Ajuste a arte</h2>
+          <h2 className="mb-1 text-sm font-semibold">Imagem do post</h2>
           <p className="hint mb-4 mt-0">
             Enquadre a foto e revise a frase que vai sobre a imagem.
           </p>
 
-          {!hasPhotos ? (
-            <EmptyNote>
-              Este post não tem foto. Sem foto não dá para montar a arte — crie uma
-              nova pauta enviando a imagem junto.
-            </EmptyNote>
+          {!canEdit ? (
+            // Colega revisando: só visualiza, não mexe na foto de outra pessoa.
+            <div className="space-y-4">
+              {current?.renderedArtUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={current.renderedArtUrl}
+                  alt="Arte atual"
+                  className="mx-auto max-w-[420px] rounded-xl border border-line"
+                />
+              ) : (
+                <EmptyNote>
+                  {hasPhotos
+                    ? "A foto já foi enviada, mas a arte ainda não foi finalizada pelo autor."
+                    : "Este post ainda não tem foto."}
+                </EmptyNote>
+              )}
+              <ImageSuggestions suggestions={current?.imageSuggestions ?? []} />
+            </div>
+          ) : !hasPhotos ? (
+            <div className="space-y-4">
+              <EmptyNote>
+                Este post ainda não tem foto — envie a sua, ou use as sugestões
+                de busca abaixo pra achar uma e depois enviá-la aqui.
+              </EmptyNote>
+              <PhotoUploader
+                dragging={photoDragging}
+                busy={photoBusy}
+                onDragOver={() => setPhotoDragging(true)}
+                onDragLeave={() => setPhotoDragging(false)}
+                onDrop={(f) => { setPhotoDragging(false); addPhoto(f); }}
+                onPick={() => photoInputRef.current?.click()}
+              />
+              {photoError && <p className="alert-error">{photoError}</p>}
+              <ImageSuggestions suggestions={current?.imageSuggestions ?? []} />
+            </div>
           ) : !hasTemplates ? (
             <EmptyNote>
               Nenhum template cadastrado ainda. Um administrador precisa criar o
               template da marca em <strong className="text-ink">Admin → Templates</strong>.
             </EmptyNote>
           ) : (
-            <ArtEditor
-              postId={post.id}
-              photos={post.photos}
-              templates={templates}
-              initial={{
-                selectedPhotoId: current?.selectedPhotoId,
-                artTemplateId: current?.artTemplateId,
-                photoTransform: current?.photoTransform,
-                title: current?.title,
-                subtitle: current?.subtitle,
-                titleOffset: current?.titleOffset,
-                subtitleOffset: current?.subtitleOffset,
-              }}
-              onSaved={() => {
-                setStepOverride(null);
-                router.refresh();
-              }}
-            />
-          )}
+            <div className="space-y-4">
+              <details className="group card-soft p-3">
+                <summary className="btn-ghost w-full cursor-pointer list-none">
+                  📷 Adicionar ou trocar a foto
+                </summary>
+                <div className="mt-3 space-y-3">
+                  <PhotoUploader
+                    dragging={photoDragging}
+                    busy={photoBusy}
+                    compact
+                    onDragOver={() => setPhotoDragging(true)}
+                    onDragLeave={() => setPhotoDragging(false)}
+                    onDrop={(f) => { setPhotoDragging(false); addPhoto(f); }}
+                    onPick={() => photoInputRef.current?.click()}
+                  />
+                  {photoError && <p className="alert-error">{photoError}</p>}
+                  <ImageSuggestions suggestions={current?.imageSuggestions ?? []} />
+                </div>
+              </details>
 
-          {naturalStep === "review" && (
-            <button
-              className="btn-subtle mt-4 w-full"
-              onClick={() => setStepOverride("review")}
-            >
-              ← Voltar para a revisão
-            </button>
+              <ArtEditor
+                key={post.photos.map((p) => p.id).join(",")}
+                postId={post.id}
+                photos={post.photos}
+                templates={templates}
+                initial={{
+                  selectedPhotoId: lastAddedPhotoId ?? current?.selectedPhotoId,
+                  artTemplateId: current?.artTemplateId,
+                  photoTransform:
+                    lastAddedPhotoId ? null : current?.photoTransform,
+                  title: current?.title,
+                  subtitle: current?.subtitle,
+                  titleOffset: current?.titleOffset,
+                  subtitleOffset: current?.subtitleOffset,
+                }}
+                onSaved={() => {
+                  setStepOverride(null);
+                  router.refresh();
+                }}
+              />
+            </div>
+          )}
+          {canEdit && (
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              className="hidden"
+              onChange={(e) => addPhoto(e.target.files?.[0])}
+            />
           )}
         </section>
       )}
 
-      {/* ───────────── PASSO 2: REVISÃO ───────────── */}
+      {/* ───────────── PASSO 3: REVISÃO ───────────── */}
       {step === "review" && (
         <div className="grid gap-5 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
           {/* Prévia */}
@@ -212,110 +420,78 @@ export function PostWorkspace({ user, post, templates }: Props) {
           </section>
 
           <div className="space-y-5">
-            {/* Texto */}
-            <section className="card p-4">
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-sm font-semibold">Texto do post</h2>
-                  {current?.aiProvider && (
-                    <span
-                      className="badge bg-brand-500/10 text-brand-300"
-                      title={current.aiModel ? `Modelo: ${current.aiModel}` : undefined}
-                    >
-                      ✨ {aiSourceLabel(current.aiProvider)}
-                    </span>
-                  )}
-                </div>
-                {canEdit && !isFinished && panel !== "text" && (
-                  <button className="btn-ghost btn-sm" onClick={() => setPanel("text")}>
-                    Editar
-                  </button>
-                )}
-              </div>
-
-              {panel === "text" ? (
-                <div className="space-y-3">
-                  <Field label="Título na imagem" value={draft.title} max={69}
-                    onChange={(v) => setDraft({ ...draft, title: v })} />
-                  <Field label="Subtítulo na imagem" textarea max={149} value={draft.subtitle}
-                    onChange={(v) => setDraft({ ...draft, subtitle: v })} />
-                  <Field label="Legenda do Instagram" textarea rows={10}
-                    value={draft.instagramCaption}
-                    onChange={(v) => setDraft({ ...draft, instagramCaption: v })} />
-                  <div className="flex flex-wrap gap-2">
-                    <button className="btn-primary" onClick={saveText} disabled={!!busy}>
-                      {busy ? <BusyLabel label={busy} seconds={elapsed} /> : "Salvar texto"}
-                    </button>
-                    <button className="btn-subtle" onClick={() => setPanel(null)}>
-                      Cancelar
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <dl className="space-y-3">
-                  <Read label="Título na imagem" value={current?.title} art />
-                  <Read label="Subtítulo na imagem" value={current?.subtitle} art />
-                  <Read label="Legenda do Instagram" value={current?.instagramCaption} />
-                </dl>
-              )}
-            </section>
-
-            {/* Decisões */}
+            {/* Decisão — uma ação primária clara por papel, o resto fica discreto. */}
             {!isFinished && (
               <section className="card p-4">
-                <h2 className="text-sm font-semibold">E agora?</h2>
-                <p className="hint mb-3 mt-0.5">
-                  Escolha o que fazer com esta versão do post.
-                </p>
+                <h2 className="mb-3 text-sm font-semibold">Decisão</h2>
 
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {canReview && (
-                    <Decision
-                      icon="✅" title="Aprovar e publicar"
-                      desc="Envia para o Instagram agora"
-                      tone="success"
-                      disabled={!!busy || !current?.renderedArtUrl}
+                {isManagerOrAdmin && (
+                  <button
+                    className="btn-success w-full"
+                    onClick={approve}
+                    disabled={!!busy || !current?.renderedArtUrl}
+                  >
+                    {busy ? <BusyLabel label={busy} seconds={elapsed} /> : "✅ Aprovar e publicar"}
+                  </button>
+                )}
+
+                {isPeerReviewer && (
+                  <>
+                    <p className="hint mb-2 mt-0">
+                      {approvals.length}/{PEER_APPROVALS_NEEDED} jornalistas já aprovaram
+                      esta versão — publica sozinho com {PEER_APPROVALS_NEEDED}, ou na hora
+                      com 1 aprovação de editor/gerente.
+                    </p>
+                    <button
+                      className="btn-success w-full"
                       onClick={approve}
-                    />
-                  )}
-                  <Decision
-                    icon="🔄" title="A IA reescreve"
-                    desc="Gera uma nova versão do texto"
-                    disabled={!!busy || !canEdit}
-                    onClick={() => setPanel(panel === "rewrite" ? null : "rewrite")}
-                  />
-                  <Decision
-                    icon="🖼️" title="Editar a foto"
-                    desc="Volta para o enquadramento"
-                    disabled={!!busy || !canEdit || !hasPhotos}
-                    onClick={() => setStepOverride("art")}
-                  />
-                  <Decision
-                    icon="✏️" title="Editar o texto"
-                    desc="Ajuste manual, sem IA"
-                    disabled={!!busy || !canEdit}
-                    onClick={() => setPanel("text")}
-                  />
-                  {canReview && (
-                    <Decision
-                      icon="🚫" title="Recusar"
-                      desc="Arquiva com um motivo"
-                      tone="danger"
-                      disabled={!!busy}
-                      onClick={() => setPanel(panel === "reject" ? null : "reject")}
-                    />
-                  )}
-                </div>
+                      disabled={!!busy || !current?.renderedArtUrl || !!myApproval}
+                    >
+                      {busy ? (
+                        <BusyLabel label={busy} seconds={elapsed} />
+                      ) : myApproval ? (
+                        "✓ Você já aprovou"
+                      ) : (
+                        "🙋 Aprovar esta pauta"
+                      )}
+                    </button>
+                  </>
+                )}
 
-                {!current?.renderedArtUrl && canReview && (
-                  <p className="hint">
-                    A arte ainda não foi gerada — finalize o passo 1 para poder publicar.
+                {isAuthor && !isManagerOrAdmin && (
+                  <p className="alert-info">
+                    {approvals.length > 0
+                      ? `Aguardando aprovação — ${approvals.length}/${PEER_APPROVALS_NEEDED} jornalistas já aprovaram.`
+                      : `Aguardando aprovação de ${PEER_APPROVALS_NEEDED} outros jornalistas, ou de um editor/gerente.`}
                   </p>
                 )}
-                {!canReview && (
+
+                {!current?.renderedArtUrl && (
                   <p className="hint">
-                    Você envia e edita; a aprovação final é de um editor/gerente.
+                    A arte ainda não foi gerada — finalize o passo 2 (Imagem) antes.
                   </p>
+                )}
+
+                {(canEdit || isPeerReviewer || canDecide) && (
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {(canEdit || isPeerReviewer) && (
+                      <Decision
+                        icon="🔄" title="Pedir reescrita"
+                        desc="A IA gera uma nova versão do texto"
+                        disabled={!!busy}
+                        onClick={() => setPanel(panel === "rewrite" ? null : "rewrite")}
+                      />
+                    )}
+                    {canDecide && (
+                      <Decision
+                        icon="🚫" title="Recusar"
+                        desc="Arquiva com um motivo"
+                        tone="danger"
+                        disabled={!!busy}
+                        onClick={() => setPanel(panel === "reject" ? null : "reject")}
+                      />
+                    )}
+                  </div>
                 )}
 
                 {panel === "rewrite" && (
@@ -407,31 +583,6 @@ export function PostWorkspace({ user, post, templates }: Props) {
 
 // ── Peças de UI ──────────────────────────────────────────────
 
-function StepChip({
-  n, label, active, done,
-}: { n: number; label: string; active?: boolean; done?: boolean }) {
-  return (
-    <li
-      className={`flex items-center gap-2 rounded-full px-3 py-1.5 ${
-        active
-          ? "bg-brand-500/15 text-brand-300"
-          : done
-            ? "text-emerald-400"
-            : "text-faint"
-      }`}
-    >
-      <span
-        className={`flex h-5 w-5 items-center justify-center rounded-full text-[11px] ${
-          active ? "bg-brand-500 text-white" : done ? "bg-emerald-500/20" : "bg-line"
-        }`}
-      >
-        {done ? "✓" : n}
-      </span>
-      {label}
-    </li>
-  );
-}
-
 function Decision({
   icon, title, desc, onClick, disabled, tone,
 }: {
@@ -462,6 +613,90 @@ function Decision({
 
 function EmptyNote({ children }: { children: React.ReactNode }) {
   return <p className="alert-info">{children}</p>;
+}
+
+/**
+ * Envio de foto direto na tela de revisão — pro caso em que o jornalista só
+ * decide a imagem depois de ver o texto pronto (achou uma melhor, baixou do
+ * Google ou de um banco gratuito). Aceita arrastar-e-soltar ou o botão
+ * tradicional; nunca é a única forma de adicionar foto, só mais uma.
+ */
+function PhotoUploader({
+  dragging, busy, compact, onDragOver, onDragLeave, onDrop, onPick,
+}: {
+  dragging: boolean;
+  busy: boolean;
+  compact?: boolean;
+  onDragOver: () => void;
+  onDragLeave: () => void;
+  onDrop: (file: File | undefined) => void;
+  onPick: () => void;
+}) {
+  return (
+    <div
+      onDragOver={(e) => { e.preventDefault(); onDragOver(); }}
+      onDragLeave={onDragLeave}
+      onDrop={(e) => { e.preventDefault(); onDrop(e.dataTransfer.files?.[0]); }}
+      onClick={onPick}
+      className={`flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl
+                  border-2 border-dashed text-center transition-colors ${
+                    compact ? "px-3 py-4" : "px-4 py-8"
+                  } ${
+                    dragging
+                      ? "border-brand-500 bg-brand-500/10"
+                      : "border-line bg-elevated/60 hover:border-brand-500/60"
+                  }`}
+    >
+      <p className="text-sm font-medium">
+        {busy ? "Enviando…" : "Arraste a foto ou toque para escolher"}
+      </p>
+      <p className="text-xs text-muted">JPEG, PNG ou WebP · até {MAX_PHOTO_MB} MB</p>
+    </div>
+  );
+}
+
+/**
+ * Exatamente 2 sugestões de busca geradas pela IA — só ajudam a achar uma
+ * imagem; nunca escolhem, baixam ou publicam nada sozinhas. Cada sugestão
+ * abre a busca correspondente numa aba nova; a foto encontrada precisa ser
+ * baixada e enviada de volta pelo uploader acima.
+ */
+function ImageSuggestions({ suggestions }: { suggestions: string[] }) {
+  if (!suggestions.length) return null;
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-medium text-muted">
+        💡 Sugestões de busca de imagem (a IA só sugere — quem escolhe é você)
+      </p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {suggestions.slice(0, 2).map((q) => (
+          <div key={q} className="card-soft space-y-2 p-3">
+            <p className="truncate text-sm font-medium text-ink" title={q}>
+              “{q}”
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <a
+                href={googleImagesUrl(q)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-ghost btn-sm"
+              >
+                🔎 Google Imagens
+              </a>
+              <a
+                href={freePhotosUrl(q)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-ghost btn-sm"
+              >
+                🖼️ Fotos gratuitas
+              </a>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function Field({
