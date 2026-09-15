@@ -2,6 +2,7 @@ import { type NextRequest } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { createPostSchema } from "@/lib/validation";
 import { createPostWithAi, listPosts } from "@/lib/services/posts";
+import { maybeCleanupExpiredPosts } from "@/lib/services/retention";
 import { created, ok, route } from "@/lib/http";
 
 // GET /posts — listagem (filtros: ?status=&mine=1)
@@ -10,6 +11,7 @@ export const GET = route(async (req: NextRequest) => {
   const url = new URL(req.url);
   const status = url.searchParams.get("status") ?? undefined;
   const mine = url.searchParams.get("mine") === "1";
+  await maybeCleanupExpiredPosts();
   const posts = await listPosts({ status, mineFor: mine ? user.id : undefined });
   return ok({ posts });
 });

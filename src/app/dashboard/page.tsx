@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/auth";
-import { listPosts } from "@/lib/services/posts";
+import { listPosts, listAuditLogs } from "@/lib/services/posts";
+import { maybeCleanupExpiredPosts } from "@/lib/services/retention";
 import { AppShell } from "@/components/AppShell";
 import { StatusBadge } from "@/components/StatusBadge";
 
@@ -10,7 +11,10 @@ export default async function DashboardPage() {
   const user = await getCurrentUser();
   if (!user) return null;
 
-  const posts = await listPosts();
+  // Precisa terminar ANTES de ler posts/log em paralelo — senão a leitura
+  // do log pode correr antes da linha ser inserida pela própria limpeza.
+  await maybeCleanupExpiredPosts();
+  const [posts, auditLogs] = await Promise.all([listPosts(), listAuditLogs()]);
 
   return (
     <AppShell user={{ name: user.name, role: user.role }}>
@@ -79,6 +83,42 @@ export default async function DashboardPage() {
               </Link>
             );
           })}
+        </div>
+      )}
+
+      {auditLogs.length > 0 && (
+        <div className="mt-8">
+          <h2 className="mb-1 text-sm font-semibold text-muted">
+            Publicações removidas automaticamente
+          </h2>
+          <p className="hint mb-3 mt-0">
+            Limpeza de retenção: posts publicados somem do banco 2 dias depois
+            (o post no Instagram continua no ar); em revisão ou falhos que
+            passam 3 dias sem aprovação também saem. Fica só este registro
+            básico, pra auditoria futura.
+          </p>
+          <div className="card divide-y divide-lineSoft">
+            {auditLogs.map((log) => (
+              <div
+                key={log.id}
+                className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm"
+              >
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <StatusBadge status={log.status} />
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-ink">
+                      {log.title ?? "(sem título)"}
+                    </p>
+                    <p className="text-xs text-faint">{log.authorName}</p>
+                  </div>
+                </div>
+                <span className="shrink-0 text-xs text-faint">
+                  {new Date(log.createdAt).toLocaleDateString("pt-BR")} → apagado{" "}
+                  {new Date(log.purgedAt).toLocaleDateString("pt-BR")}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </AppShell>

@@ -551,6 +551,14 @@ export function getPostDetail(postId: string) {
   });
 }
 
+/**
+ * Não aciona a limpeza de retenção aqui dentro: quem chama `listPosts`
+ * costuma também chamar `listAuditLogs` em paralelo (`Promise.all`), e se a
+ * limpeza rodasse como efeito colateral escondido aqui, a leitura do log
+ * poderia correr ANTES da linha ser inserida (post some do feed mas o log
+ * ainda não apareceu). Por isso quem monta a página aciona
+ * `maybeCleanupExpiredPosts()` explicitamente antes de ler os dois.
+ */
 export function listPosts(opts: { status?: string; mineFor?: string } = {}) {
   return prisma.post.findMany({
     where: {
@@ -571,6 +579,18 @@ export function listPosts(opts: { status?: string; mineFor?: string } = {}) {
         },
       },
     },
+  });
+}
+
+/**
+ * Rastro do que foi apagado pela limpeza automática — só o essencial
+ * (título, status, autor, datas) pra responder "quem postou o quê e
+ * quando" numa auditoria futura, sem guardar fotos/versões/decisões.
+ */
+export function listAuditLogs(limit = 50) {
+  return prisma.postAuditLog.findMany({
+    orderBy: { purgedAt: "desc" },
+    take: limit,
   });
 }
 

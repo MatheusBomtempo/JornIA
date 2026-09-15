@@ -217,3 +217,25 @@ model Publication {
   @@index([postVersionId])
   @@map("publications")
 }
+
+/**
+ * Rastro mínimo de auditoria: quando um post é apagado pela limpeza
+ * automática de retenção (ver função `cleanup_expired_posts()` no banco),
+ * o registro pesado (fotos, versões, decisões, publicações) some, mas fica
+ * esta linha — só o essencial pra responder "quem postou o quê e quando" se
+ * precisar auditar depois. Sem relation pro Post: ele já não existe mais.
+ */
+model PostAuditLog {
+  id          String    @id @default(uuid()) @db.Uuid
+  postId      String    @map("post_id") @db.Uuid
+  title       String?
+  /** Status do post no momento em que foi apagado ('published' | 'in_review' | 'failed'). */
+  status      String
+  authorName  String    @map("author_name")
+  createdAt   DateTime  @map("created_at") @db.Timestamptz(6)
+  publishedAt DateTime? @map("published_at") @db.Timestamptz(6)
+  purgedAt    DateTime  @default(now()) @map("purged_at") @db.Timestamptz(6)
+
+  @@index([purgedAt])
+  @@map("post_audit_log")
+}
