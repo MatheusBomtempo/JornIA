@@ -3,16 +3,21 @@ import { requireUser, hashPassword } from "@/lib/auth";
 import { requireRole } from "@/lib/rbac";
 import { prisma } from "@/lib/db";
 import { updateUserSchema } from "@/lib/validation";
-import { ok, route } from "@/lib/http";
+import { forbidden, ok, route } from "@/lib/http";
 import type { Prisma } from "@prisma/client";
 
-// PATCH /users/:id — admin atualiza papel/status/senha
+// PATCH /users/:id — manager/admin atualizam papel/status/senha. Manager não
+// pode promover ninguém a admin — só admin mexe em admin.
 export const PATCH = route(
   async (req: NextRequest, ctx: { params: Promise<{ id: string }> }) => {
-    const admin = await requireUser();
-    requireRole(admin, "admin");
+    const actor = await requireUser();
+    requireRole(actor, "manager", "admin");
     const { id } = await ctx.params;
     const data = updateUserSchema.parse(await req.json());
+
+    if (actor.role === "manager" && data.role === "admin") {
+      throw forbidden("Gerente não pode promover ninguém a admin.");
+    }
 
     const update: Prisma.UserUpdateInput = {};
     if (data.name !== undefined) update.name = data.name;

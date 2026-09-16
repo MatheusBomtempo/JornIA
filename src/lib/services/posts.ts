@@ -6,6 +6,7 @@ import { compactSource } from "../compact";
 import { renderAndStore } from "../render";
 import { publishToInstagram } from "../instagram";
 import { canEditPost, canReviewPost, can } from "../rbac";
+import { purgePostsWithMedia } from "./retention";
 import { ApiError, badRequest, conflict, forbidden, notFound } from "../http";
 import { POST_STATUS, PUBLICATION_STATUS, PEER_APPROVALS_NEEDED, type Credit } from "../domain";
 import type { z } from "zod";
@@ -580,6 +581,31 @@ export function listPosts(opts: { status?: string; mineFor?: string } = {}) {
       },
     },
   });
+}
+
+/**
+ * Apaga um post agora, na mão do usuário — independente de status ou idade
+ * (diferente da limpeza automática, que só pega post expirado). Mesma regra
+ * de canEditPost: admin/manager apagam qualquer post, staff só o que ele
+ * mesmo criou. Mesma garantia da limpeza automática: storage (fotos + arte)
+ * some junto com o banco, e fica um registro mínimo em post_audit_log. Não
+ * mexe em nada já publicado no Instagram, só no nosso lado.
+ */
+export async function deletePostNow(user: User, id: string): Promise<void> {
+  const post = await prisma.post.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      createdBy: true,
+      photos: { select: { storageUrl: true } },
+      versions: { select: { renderedArtUrl: true } },
+    },
+  });
+  if (!post) throw notFound("Post não encontrado.");
+  if (!canEditPost(user, post)) {
+    throw forbidden("Você só pode apagar pautas que você mesmo criou.");
+  }
+  await purgePostsWithMedia([post]);
 }
 
 /**

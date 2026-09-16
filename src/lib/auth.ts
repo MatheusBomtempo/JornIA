@@ -69,6 +69,11 @@ export async function requireUser(): Promise<User> {
   return user;
 }
 
+/** Senha temporária forte, pra reset feito por admin/manager (ver /users/:id/reset-password). */
+export function generateTempPassword(): string {
+  return randomBytes(12).toString("base64url"); // 16 chars, sem ambiguidade
+}
+
 // ── API keys ─────────────────────────────────────────────────
 const API_KEY_PREFIX = "jrn_";
 

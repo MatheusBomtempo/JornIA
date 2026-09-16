@@ -1,6 +1,5 @@
 import { type NextRequest } from "next/server";
 import { requireUser } from "@/lib/auth";
-import { requireRole } from "@/lib/rbac";
 import { prisma } from "@/lib/db";
 import { styleExampleSchema } from "@/lib/validation";
 import { created, ok, route } from "@/lib/http";
@@ -14,10 +13,9 @@ export const GET = route(async () => {
   return ok({ examples });
 });
 
-// POST /style-examples — manager/admin adicionam um exemplo
+// POST /style-examples — qualquer papel autenticado adiciona um exemplo
 export const POST = route(async (req: NextRequest) => {
   const user = await requireUser();
-  requireRole(user, "manager", "admin");
   const data = styleExampleSchema.parse(await req.json());
 
   const count = await prisma.styleExample.count();

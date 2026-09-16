@@ -4,6 +4,7 @@ import { listPosts, listAuditLogs } from "@/lib/services/posts";
 import { maybeCleanupExpiredPosts } from "@/lib/services/retention";
 import { AppShell } from "@/components/AppShell";
 import { StatusBadge } from "@/components/StatusBadge";
+import { DeletePostButton } from "@/components/DeletePostButton";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,11 @@ export default async function DashboardPage() {
 
   return (
     <AppShell user={{ name: user.name, role: user.role }}>
+      <div className="alert-info mb-5">
+        🎬 Em breve: suporte a <strong>vídeos</strong>, além de foto — mesma
+        proposta, novo formato de post.
+      </div>
+
       <div className="mb-5 flex items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold tracking-tight">Feed de pautas</h1>
@@ -49,8 +55,13 @@ export default async function DashboardPage() {
               <Link
                 key={post.id}
                 href={`/posts/${post.id}`}
-                className="card group overflow-hidden transition-colors hover:border-brand-500/50"
+                className="card group relative overflow-hidden transition-colors hover:border-brand-500/50"
               >
+                {(user.role === "admin" ||
+                  user.role === "manager" ||
+                  post.author.id === user.id) && (
+                  <DeletePostButton postId={post.id} />
+                )}
                 <div className="aspect-square bg-black">
                   {v?.renderedArtUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element

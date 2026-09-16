@@ -1,6 +1,5 @@
 import { type NextRequest } from "next/server";
 import { requireUser } from "@/lib/auth";
-import { requireRole } from "@/lib/rbac";
 import { prisma } from "@/lib/db";
 import { artTemplateSchema } from "@/lib/validation";
 import { sortTemplatesByFormat } from "@/lib/domain";
@@ -17,10 +16,9 @@ export const GET = route(async (req: NextRequest) => {
   return ok({ templates: sortTemplatesByFormat(templates) });
 });
 
-// POST /art-templates — manager/admin cadastram template fixo
+// POST /art-templates — qualquer papel autenticado cadastra template fixo
 export const POST = route(async (req: NextRequest) => {
-  const user = await requireUser();
-  requireRole(user, "manager", "admin");
+  await requireUser();
   const data = artTemplateSchema.parse(await req.json());
 
   const template = await prisma.artTemplate.create({

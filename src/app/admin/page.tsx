@@ -4,11 +4,11 @@ import { AdminPanel } from "@/components/AdminPanel";
 
 export const dynamic = "force-dynamic";
 
+// Todo papel entra aqui — AdminPanel decide as abas visíveis por role
+// (estilo/templates: todo mundo; usuários: manager+admin; API keys: só admin).
 export default async function AdminPage() {
   const user = await getCurrentUser();
   if (!user) return null;
-
-  const isStaff = user.role === "staff";
 
   return (
     <AppShell user={{ name: user.name, role: user.role }}>
@@ -19,13 +19,7 @@ export default async function AdminPage() {
         </p>
       </header>
 
-      {isStaff ? (
-        <div className="card px-6 py-12 text-center text-muted">
-          Área restrita a editores/gerentes e administradores.
-        </div>
-      ) : (
-        <AdminPanel role={user.role} />
-      )}
+      <AdminPanel role={user.role} />
     </AppShell>
   );
 }

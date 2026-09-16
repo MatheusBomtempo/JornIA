@@ -28,6 +28,8 @@ model User {
   role         UserRole @default(staff)
   active       Boolean  @default(true)
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  /** Última vez que um admin/manager resetou a senha e mandou por e-mail. */
+  passwordResetAt DateTime? @map("password_reset_at") @db.Timestamptz(6)
 
   posts            Post[]
   apiKeysCreated   ApiKey[]

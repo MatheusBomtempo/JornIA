@@ -5,12 +5,51 @@ import { deleteObjectByUrl } from "../storage";
 const PUBLISHED_TTL_DAYS = 2;
 const PENDING_TTL_DAYS = 3; // in_review | failed
 
+type PurgeCandidate = {
+  id: string;
+  photos: { storageUrl: string }[];
+  versions: { renderedArtUrl: string | null }[];
+};
+
+/**
+ * Apaga o storage (fotos + arte renderizada) dos posts dados e só então as
+ * linhas do banco (via purge_posts, com audit log — ver
+ * prisma/migrations/..._purge_posts_function). Compartilhado pela limpeza
+ * automática (cleanupExpiredPosts) e pelo apagar manual do admin
+ * (deletePostNow, em services/posts.ts) — mesma garantia nos dois: nunca
+ * sobra arquivo órfão no R2 nem linha sem audit log.
+ */
+export async function purgePostsWithMedia(posts: PurgeCandidate[]): Promise<void> {
+  if (posts.length === 0) return;
+
+  const urls = new Set<string>();
+  for (const post of posts) {
+    for (const photo of post.photos) urls.add(photo.storageUrl);
+    for (const version of post.versions) {
+      if (version.renderedArtUrl) urls.add(version.renderedArtUrl);
+    }
+  }
+
+  // Apaga o storage primeiro; se uma URL falhar, loga e segue — a política de
+  // retenção (o dado tem que sumir do banco no prazo) importa mais que um
+  // objeto órfão raro no R2, que não pesa nada no uso (ver conversa sobre
+  // custo de storage).
+  await Promise.all(
+    [...urls].map((url) =>
+      deleteObjectByUrl(url).catch((err) =>
+        console.error(`[JornIA] Falha ao apagar do storage (${url}):`, err),
+      ),
+    ),
+  );
+
+  const ids = posts.map((p) => p.id);
+  await prisma.$executeRaw`SELECT purge_posts(${ids}::uuid[]);`;
+}
+
 /**
  * Limpeza de posts expirados (publicado há mais de 2 dias, ou em revisão/
  * falhou há mais de 3). "Apagar" nunca mexe no Instagram — só remove do
- * nosso banco+storage. Antes de apagar, grava uma linha mínima em
- * post_audit_log (via purge_posts, ver prisma/migrations/..._purge_posts_function)
- * para auditoria futura.
+ * nosso banco+storage.
  *
  * A regra de expiração mora aqui (não em SQL) de propósito: só o app
  * consegue apagar o arquivo real no R2, então o app precisa decidir "quem
@@ -37,30 +76,8 @@ export async function cleanupExpiredPosts(): Promise<{ purged: number }> {
   });
   if (expired.length === 0) return { purged: 0 };
 
-  const urls = new Set<string>();
-  for (const post of expired) {
-    for (const photo of post.photos) urls.add(photo.storageUrl);
-    for (const version of post.versions) {
-      if (version.renderedArtUrl) urls.add(version.renderedArtUrl);
-    }
-  }
-
-  // Apaga o storage primeiro; se uma URL falhar, loga e segue — a política de
-  // retenção (o dado tem que sumir do banco no prazo) importa mais que um
-  // objeto órfão raro no R2, que não pesa nada no uso (ver conversa sobre
-  // custo de storage).
-  await Promise.all(
-    [...urls].map((url) =>
-      deleteObjectByUrl(url).catch((err) =>
-        console.error(`[JornIA] Falha ao apagar do storage (${url}):`, err),
-      ),
-    ),
-  );
-
-  const ids = expired.map((p) => p.id);
-  await prisma.$executeRaw`SELECT purge_posts(${ids}::uuid[]);`;
-
-  return { purged: ids.length };
+  await purgePostsWithMedia(expired);
+  return { purged: expired.length };
 }
 
 const THROTTLE_MS = 60 * 60 * 1000; // no máximo 1x por hora

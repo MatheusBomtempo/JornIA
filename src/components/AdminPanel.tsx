@@ -10,13 +10,14 @@ type Tab = "style" | "templates" | "users" | "keys";
 
 export function AdminPanel({ role }: { role: UserRole }) {
   const isAdmin = role === "admin";
+  const canManageUsers = role === "admin" || role === "manager";
   const [tab, setTab] = useState<Tab>("style");
 
-  const tabs: { id: Tab; label: string; adminOnly?: boolean }[] = [
-    { id: "style", label: "Estilo do jornal" },
-    { id: "templates", label: "Templates" },
-    { id: "users", label: "Usuários", adminOnly: true },
-    { id: "keys", label: "API keys", adminOnly: true },
+  const tabs: { id: Tab; label: string; show: boolean }[] = [
+    { id: "style", label: "Estilo do jornal", show: true },
+    { id: "templates", label: "Templates", show: true },
+    { id: "users", label: "Usuários", show: canManageUsers },
+    { id: "keys", label: "API keys", show: isAdmin },
   ];
 
   return (
@@ -24,7 +25,7 @@ export function AdminPanel({ role }: { role: UserRole }) {
       <div className="-mx-4 overflow-x-auto px-4">
         <div className="flex w-max gap-2">
           {tabs
-            .filter((t) => !t.adminOnly || isAdmin)
+            .filter((t) => t.show)
             .map((t) => (
               <button
                 key={t.id}
@@ -43,7 +44,7 @@ export function AdminPanel({ role }: { role: UserRole }) {
 
       {tab === "style" && <StyleSection />}
       {tab === "templates" && <TemplatesSection />}
-      {tab === "users" && isAdmin && <UsersSection />}
+      {tab === "users" && canManageUsers && <UsersSection canPromoteAdmin={isAdmin} />}
       {tab === "keys" && isAdmin && <KeysSection />}
     </div>
   );
@@ -290,14 +291,20 @@ interface AdminUser {
   email: string;
   role: UserRole;
   active: boolean;
+  passwordResetAt: string | null;
 }
 
-function UsersSection() {
+function UsersSection({ canPromoteAdmin }: { canPromoteAdmin: boolean }) {
   const { error, wrap } = useAsyncError();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [form, setForm] = useState({
     name: "", email: "", password: "", role: "staff" as UserRole,
   });
+  const [resetting, setResetting] = useState<string | null>(null);
+  const [resetError, setResetError] = useState<string | null>(null);
+  const assignableRoles = canPromoteAdmin
+    ? USER_ROLES
+    : USER_ROLES.filter((r) => r !== "admin");
 
   const load = () =>
     apiGet<{ users: AdminUser[] }>("/api/users").then((d) => setUsers(d.users));
@@ -318,6 +325,26 @@ function UsersSection() {
       await load();
     });
 
+  const resetPassword = async (u: AdminUser) => {
+    if (
+      !confirm(
+        `Gerar uma senha nova pra ${u.name} e mandar por e-mail pra ${u.email}?`,
+      )
+    ) {
+      return;
+    }
+    setResetError(null);
+    setResetting(u.id);
+    try {
+      await apiPost(`/api/users/${u.id}/reset-password`);
+      await load();
+    } catch (err) {
+      setResetError((err as Error).message);
+    } finally {
+      setResetting(null);
+    }
+  };
+
   return (
     <div className="grid gap-5 lg:grid-cols-2">
       <div className="card space-y-3 p-4">
@@ -330,31 +357,54 @@ function UsersSection() {
           onChange={(e) => setForm({ ...form, password: e.target.value })} />
         <select className="input" value={form.role}
           onChange={(e) => setForm({ ...form, role: e.target.value as UserRole })}>
-          {USER_ROLES.map((r) => (
+          {assignableRoles.map((r) => (
             <option key={r} value={r}>{ROLE_LABELS[r]}</option>
           ))}
         </select>
+        {!canPromoteAdmin && (
+          <p className="hint">Gerente só cria contas de gerente ou jornalista.</p>
+        )}
         {error && <p className="alert-error">{error}</p>}
         <button className="btn-primary" onClick={create}>Criar usuário</button>
       </div>
 
       <div className="space-y-2">
         <h3 className="text-sm font-semibold">Usuários ({users.length})</h3>
+        {resetError && <p className="alert-error">{resetError}</p>}
         {users.map((u) => (
           <div key={u.id} className="card flex flex-wrap items-center gap-2 p-3">
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-medium">{u.name}</div>
               <div className="truncate text-xs text-muted">{u.email}</div>
+              {u.passwordResetAt && (
+                <div className="text-[11px] text-faint">
+                  login enviado em{" "}
+                  {new Date(u.passwordResetAt).toLocaleString("pt-BR", {
+                    day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+                  })}
+                </div>
+              )}
             </div>
             <select
               className="input w-auto py-1.5 text-xs"
               value={u.role}
+              disabled={!canPromoteAdmin && u.role === "admin"}
               onChange={(e) => update(u.id, { role: e.target.value as UserRole })}
             >
-              {USER_ROLES.map((r) => (
-                <option key={r} value={r}>{ROLE_LABELS[r]}</option>
-              ))}
+              {(canPromoteAdmin || u.role === "admin" ? USER_ROLES : assignableRoles).map(
+                (r) => (
+                  <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                ),
+              )}
             </select>
+            <button
+              className="btn-subtle btn-sm"
+              onClick={() => resetPassword(u)}
+              disabled={resetting === u.id}
+              title="Gera uma senha nova e manda por e-mail"
+            >
+              {resetting === u.id ? "Enviando…" : "Enviar login"}
+            </button>
             <button
               className={u.active ? "btn-ghost btn-sm" : "btn-success btn-sm"}
               onClick={() => update(u.id, { active: !u.active })}

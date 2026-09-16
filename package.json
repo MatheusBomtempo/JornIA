@@ -38,6 +38,7 @@
     "opentype.js": "^2.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "resend": "^6.28.1",
     "server-only": "^0.0.1",
     "sharp": "^0.33.5",
     "unpdf": "^1.8.1",

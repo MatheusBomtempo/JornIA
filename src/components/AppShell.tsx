@@ -17,7 +17,8 @@ const NAV = [
     href: "/admin",
     label: "Admin",
     icon: GearIcon,
-    roles: ["admin", "manager"] as UserRole[],
+    // Staff também entra (estilo/templates) — AdminPanel restringe o resto por role.
+    roles: ["admin", "manager", "staff"] as UserRole[],
   },
 ];
 

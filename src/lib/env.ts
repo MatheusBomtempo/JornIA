@@ -90,4 +90,12 @@ export const env = {
     accessToken: process.env.IG_ACCESS_TOKEN,
     graphVersion: process.env.IG_GRAPH_VERSION ?? "v21.0",
   },
+
+  email: {
+    resendApiKey: process.env.RESEND_API_KEY,
+    // onboarding@resend.dev só entrega pro próprio dono da conta Resend
+    // (modo sandbox) — pra mandar pra qualquer usuário de verdade, precisa
+    // verificar um domínio próprio no Resend e trocar essa variável.
+    from: process.env.EMAIL_FROM ?? "JornIA <onboarding@resend.dev>",
+  },
 };

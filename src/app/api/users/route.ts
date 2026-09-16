@@ -3,12 +3,12 @@ import { requireUser, hashPassword } from "@/lib/auth";
 import { requireRole } from "@/lib/rbac";
 import { prisma } from "@/lib/db";
 import { createUserSchema } from "@/lib/validation";
-import { conflict, created, ok, route } from "@/lib/http";
+import { conflict, created, forbidden, ok, route } from "@/lib/http";
 
-// GET /users — admin lista usuários
+// GET /users — manager/admin listam usuários
 export const GET = route(async () => {
   const user = await requireUser();
-  requireRole(user, "admin");
+  requireRole(user, "manager", "admin");
   const users = await prisma.user.findMany({
     orderBy: { createdAt: "desc" },
     select: {
@@ -18,16 +18,22 @@ export const GET = route(async () => {
       role: true,
       active: true,
       createdAt: true,
+      passwordResetAt: true,
     },
   });
   return ok({ users });
 });
 
-// POST /users — admin cria usuário
+// POST /users — manager/admin criam usuário. Manager só cria manager/staff —
+// só admin promove admin (pedido explícito do dono do produto).
 export const POST = route(async (req: NextRequest) => {
-  const admin = await requireUser();
-  requireRole(admin, "admin");
+  const actor = await requireUser();
+  requireRole(actor, "manager", "admin");
   const data = createUserSchema.parse(await req.json());
+
+  if (actor.role === "manager" && data.role === "admin") {
+    throw forbidden("Gerente só pode criar contas de gerente ou jornalista.");
+  }
 
   const exists = await prisma.user.findUnique({ where: { email: data.email } });
   if (exists) throw conflict("Já existe um usuário com esse e-mail.");
