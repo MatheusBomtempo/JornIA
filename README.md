@@ -1,6 +1,6 @@
-# JornIA
+# JornAI
 
-JornIA is a web tool that lets a newsroom publish breaking-news posts to Instagram fast, with AI writing the copy and a human always reviewing before anything goes live.
+JornAI is a web tool that lets a newsroom publish breaking-news posts to Instagram fast, with AI writing the copy and a human always reviewing before anything goes live.
 
 ## How it works
 
@@ -30,7 +30,7 @@ Newsrooms often need to get a short, urgent post out (an accident, a weather ale
 
 ## Fact-accuracy pipeline
 
-Feeding a police report or an official PDF straight into an LLM is a good way to get a confident-sounding article with wrong facts. JornIA's pipeline is built around not letting that happen:
+Feeding a police report or an official PDF straight into an LLM is a good way to get a confident-sounding article with wrong facts. JornAI's pipeline is built around not letting that happen:
 
 - Source text is cleaned and compacted deterministically (no AI) before it ever reaches a model — official documents/forms get their real fields extracted (who, where, cause, injuries) instead of being blindly truncated.
 - Personal data (names, CPF, phone numbers, plates) is redacted before the AI ever sees it.

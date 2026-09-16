@@ -1,5 +1,5 @@
 /**
- * Fonte única de verdade do domínio do JornIA: papéis, estados do post,
+ * Fonte única de verdade do domínio do JornAI: papéis, estados do post,
  * origens de versão e decisões de revisão. Espelha a state machine do SPEC.md.
  */
 

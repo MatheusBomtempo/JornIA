@@ -13,7 +13,7 @@ export async function scrapeUrl(url: string): Promise<{
   const res = await fetch(url, {
     headers: {
       "User-Agent":
-        "Mozilla/5.0 (compatible; JornIA/0.1; +https://github.com/)",
+        "Mozilla/5.0 (compatible; JornAI/0.1; +https://github.com/)",
       Accept: "text/html,application/xhtml+xml",
     },
     redirect: "follow",

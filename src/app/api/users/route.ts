@@ -52,23 +52,18 @@ export const POST = route(async (req: NextRequest) => {
     select: { id: true, name: true, email: true, role: true, active: true },
   });
 
-  // A conta já existe mesmo se o e-mail falhar (ex.: destinatário fora do
-  // sandbox do Resend) — não faz sentido travar a criação por causa disso.
-  // Quem criou usa "Reenviar login" depois de resolver o e-mail.
+  // A conta já existe mesmo se o e-mail falhar (ex.: erro no envio via
+  // Gmail) — não faz sentido travar a criação por causa disso. Quem criou
+  // usa "Reenviar login" depois de resolver o problema.
   let emailSent = true;
   let emailError: string | undefined;
-  let deliveredTo: string | undefined;
   try {
-    ({ deliveredTo } = await sendCredentialsEmail({
-      to: user.email,
-      name: user.name,
-      password: tempPassword,
-    }));
+    await sendCredentialsEmail({ to: user.email, name: user.name, password: tempPassword });
     await prisma.user.update({ where: { id: user.id }, data: { passwordResetAt: new Date() } });
   } catch (err) {
     emailSent = false;
     emailError = (err as Error).message;
   }
 
-  return created({ user, emailSent, emailError, deliveredTo });
+  return created({ user, emailSent, emailError });
 });

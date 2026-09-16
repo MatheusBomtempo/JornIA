@@ -630,7 +630,7 @@ function logCompaction(source: string, r: CompactResult) {
       ? Math.round((1 - r.compactChars / r.originalChars) * 100)
       : 0;
   console.log(
-    `[JornIA] compactação (${source}): ${r.kind} · ${r.originalChars} → ${r.compactChars} chars` +
+    `[JornAI] compactação (${source}): ${r.kind} · ${r.originalChars} → ${r.compactChars} chars` +
       (savedPct > 0 ? ` (-${savedPct}%)` : "") +
       (r.redactedCount > 0 ? ` · ${r.redactedCount} dado(s) sensível(is) redigido(s)` : "") +
       (r.removedDuplicateLines > 0 ? ` · ${r.removedDuplicateLines} linha(s) repetida(s) removida(s)` : ""),

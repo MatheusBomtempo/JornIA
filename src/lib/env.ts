@@ -91,11 +91,14 @@ export const env = {
     graphVersion: process.env.IG_GRAPH_VERSION ?? "v21.0",
   },
 
+  // Gmail SMTP: manda pra qualquer destinatário sem precisar de domínio
+  // verificado (diferente de um provedor transacional tipo Resend) — o
+  // Google já garante a autenticidade da própria conta. Trade-off: sai como
+  // remetente pessoal, sujeito ao limite/risco de sinalização do Gmail.
+  // GMAIL_APP_PASSWORD é gerada em myaccount.google.com/apppasswords
+  // (exige verificação em 2 etapas ativada na conta).
   email: {
-    resendApiKey: process.env.RESEND_API_KEY,
-    // onboarding@resend.dev só entrega pro próprio dono da conta Resend
-    // (modo sandbox) — pra mandar pra qualquer usuário de verdade, precisa
-    // verificar um domínio próprio no Resend e trocar essa variável.
-    from: process.env.EMAIL_FROM ?? "JornIA <onboarding@resend.dev>",
+    gmailUser: process.env.GMAIL_USER,
+    gmailAppPassword: process.env.GMAIL_APP_PASSWORD,
   },
 };

@@ -7,7 +7,7 @@ import type { UserRole } from "./domain";
  * Edge Runtime (usado no middleware). NÃO importa bcrypt/Prisma de propósito.
  */
 
-export const SESSION_COOKIE = "jornia_session";
+export const SESSION_COOKIE = "jornai_session";
 
 export interface SessionPayload extends JWTPayload {
   sub: string; // user id
@@ -32,7 +32,7 @@ export async function signSession(payload: SessionInput): Promise<string> {
   return new SignJWT({ ...payload })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setIssuer("jornia")
+    .setIssuer("jornai")
     .setExpirationTime(`${ttl}s`)
     .sign(secretKey());
 }
@@ -43,7 +43,7 @@ export async function verifySession(
   if (!token) return null;
   try {
     const { payload } = await jwtVerify(token, secretKey(), {
-      issuer: "jornia",
+      issuer: "jornai",
     });
     return payload as SessionPayload;
   } catch {

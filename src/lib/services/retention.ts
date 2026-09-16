@@ -37,7 +37,7 @@ export async function purgePostsWithMedia(posts: PurgeCandidate[]): Promise<void
   await Promise.all(
     [...urls].map((url) =>
       deleteObjectByUrl(url).catch((err) =>
-        console.error(`[JornIA] Falha ao apagar do storage (${url}):`, err),
+        console.error(`[JornAI] Falha ao apagar do storage (${url}):`, err),
       ),
     ),
   );
@@ -98,6 +98,6 @@ export async function maybeCleanupExpiredPosts(): Promise<void> {
   try {
     await cleanupExpiredPosts();
   } catch (err) {
-    console.error("[JornIA] Falha ao rodar cleanupExpiredPosts:", err);
+    console.error("[JornAI] Falha ao rodar cleanupExpiredPosts:", err);
   }
 }

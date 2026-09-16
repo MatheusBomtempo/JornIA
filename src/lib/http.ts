@@ -46,7 +46,7 @@ export function handleError(err: unknown): NextResponse {
       { status: 400 },
     );
   }
-  console.error("[JornIA] Erro não tratado:", err);
+  console.error("[JornAI] Erro não tratado:", err);
   return NextResponse.json(
     { error: "Erro interno do servidor" },
     { status: 500 },

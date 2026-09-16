@@ -49,7 +49,7 @@ function buildChain(): AiProvider[] {
           timeoutMs: FREE_TIER_TIMEOUT_MS,
           extraHeaders: {
             "HTTP-Referer": env.ai.appUrl,
-            "X-Title": "JornIA",
+            "X-Title": "JornAI",
           },
         }),
       );
@@ -95,7 +95,7 @@ export function getAiProvider(): AiProvider {
         model: env.ai.model,
         extraHeaders: {
           "HTTP-Referer": env.ai.appUrl,
-          "X-Title": "JornIA",
+          "X-Title": "JornAI",
         },
       });
       break;
@@ -180,7 +180,7 @@ export async function generatePostContent(
   if (!violations.length) return first;
 
   console.warn(
-    `[JornIA] Validação factual reprovou a 1ª geração (${violations
+    `[JornAI] Validação factual reprovou a 1ª geração (${violations
       .map((v) => v.rule)
       .join("; ")}). Regenerando com correções.`,
   );
@@ -212,7 +212,7 @@ async function generateOnce(
   } catch (err) {
     if (isRateLimitError(err)) throw err;
     console.warn(
-      `[JornIA] IA (${provider.name}) falhou na 1ª tentativa, tentando de novo: ${(err as Error).message}`,
+      `[JornAI] IA (${provider.name}) falhou na 1ª tentativa, tentando de novo: ${(err as Error).message}`,
     );
     return await provider.generate(input);
   }

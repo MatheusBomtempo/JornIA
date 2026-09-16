@@ -31,7 +31,7 @@ export class MockProvider implements AiProvider {
         "Texto gerado em modo de desenvolvimento (mock). Configure AI_PROVIDER para usar IA de verdade.",
         ...(credits.length ? ["", ...credits] : []),
         "",
-        "#JornIA #Teste",
+        "#JornAI #Teste",
       ].join("\n"),
       imageSuggestions: ["foto genérica notícia", "cena mock desenvolvimento"],
       meta: { provider: this.name, model: "mock" },

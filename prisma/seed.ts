@@ -112,11 +112,11 @@ function slotsFor(w: number, h: number) {
 }
 
 async function main() {
-  console.log("Seed do JornIA…");
+  console.log("Seed do JornAI…");
 
   const admin = await ensureUser(
     "Admin",
-    process.env.SEED_ADMIN_EMAIL ?? "admin@jornia.local",
+    process.env.SEED_ADMIN_EMAIL ?? "admin@jornai.local",
     process.env.SEED_ADMIN_PASSWORD ?? "admin12345",
     "admin",
   );
@@ -124,8 +124,8 @@ async function main() {
   // fazem sentido em dev local. Pular em produção evita deixar login válido
   // documentado no repo aberto pra qualquer um.
   if (process.env.NODE_ENV !== "production") {
-    await ensureUser("Editor Exemplo", "editor@jornia.local", "editor12345", "manager");
-    await ensureUser("Jornalista Exemplo", "reporter@jornia.local", "reporter123", "staff");
+    await ensureUser("Editor Exemplo", "editor@jornai.local", "editor12345", "manager");
+    await ensureUser("Jornalista Exemplo", "reporter@jornai.local", "reporter123", "staff");
   } else {
     console.log("  contas de exemplo (editor/repórter): puladas em produção");
   }

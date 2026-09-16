@@ -39,7 +39,7 @@ export class ChainProvider implements AiProvider {
       } catch (err) {
         const msg = describe(err);
         failures.push(`${provider.name}: ${msg}`);
-        console.warn(`[JornIA] IA (${provider.name}) falhou, tentando próximo da corrente: ${msg}`);
+        console.warn(`[JornAI] IA (${provider.name}) falhou, tentando próximo da corrente: ${msg}`);
       }
     }
 

@@ -10,7 +10,7 @@
  * casa das centenas de MB.
  */
 
-const DB_NAME = "jornia-drafts";
+const DB_NAME = "jornai-drafts";
 const STORE = "drafts";
 const DB_VERSION = 1;
 

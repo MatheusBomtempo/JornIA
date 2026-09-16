@@ -39,7 +39,7 @@ function LoginForm() {
       <div className="w-full max-w-sm">
         <div className="mb-7 text-center">
           <div className="text-3xl font-extrabold tracking-tight">
-            Jorn<span className="text-brand-400">IA</span>
+            Jorn<span className="text-brand-400">AI</span>
           </div>
           <p className="mt-2 text-sm text-muted">
             Da fonte ao feed em minutos.

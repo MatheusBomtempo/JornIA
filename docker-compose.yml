@@ -1,21 +1,21 @@
 services:
   db:
     image: postgres:16-alpine
-    container_name: jornia-db
+    container_name: jornai-db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: jornia
-      POSTGRES_PASSWORD: jornia
-      POSTGRES_DB: jornia
+      POSTGRES_USER: jornai
+      POSTGRES_PASSWORD: jornai
+      POSTGRES_DB: jornai
     ports:
       - "5432:5432"
     volumes:
-      - jornia_pgdata:/var/lib/postgresql/data
+      - jornai_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U jornia"]
+      test: ["CMD-SHELL", "pg_isready -U jornai"]
       interval: 5s
       timeout: 5s
       retries: 5
 
 volumes:
-  jornia_pgdata:
+  jornai_pgdata:

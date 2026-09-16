@@ -315,19 +315,14 @@ function UsersSection({ canPromoteAdmin }: { canPromoteAdmin: boolean }) {
     wrap(async () => {
       setResetError(null);
       setResetSuccess(null);
-      const { user, emailSent, emailError, deliveredTo } = await apiPost<{
+      const { user, emailSent, emailError } = await apiPost<{
         user: AdminUser;
         emailSent: boolean;
         emailError?: string;
-        deliveredTo?: string;
       }>("/api/users", form);
       setForm({ name: "", email: "", role: "staff" });
       if (emailSent) {
-        setResetSuccess(
-          deliveredTo && deliveredTo !== user.email
-            ? `Usuário criado. Login enviado para ${deliveredTo} (endereço de teste — fora de produção não manda pro e-mail real).`
-            : `Usuário criado e login enviado para ${user.email}.`,
-        );
+        setResetSuccess(`Usuário criado e login enviado para ${user.email}.`);
       } else {
         setResetError(
           `Usuário criado, mas o e-mail falhou: ${emailError}. Use "Reenviar login" depois de resolver.`,
@@ -354,14 +349,8 @@ function UsersSection({ canPromoteAdmin }: { canPromoteAdmin: boolean }) {
     setResetSuccess(null);
     setResetting(u.id);
     try {
-      const { deliveredTo } = await apiPost<{ deliveredTo?: string }>(
-        `/api/users/${u.id}/reset-password`,
-      );
-      setResetSuccess(
-        deliveredTo && deliveredTo !== u.email
-          ? `Login enviado para ${deliveredTo} (endereço de teste — fora de produção não manda pro e-mail real).`
-          : `Login enviado para ${u.email}.`,
-      );
+      await apiPost(`/api/users/${u.id}/reset-password`);
+      setResetSuccess(`Login enviado para ${u.email}.`);
       await load();
     } catch (err) {
       setResetError((err as Error).message);
@@ -482,7 +471,7 @@ function KeysSection() {
       <div className="card space-y-3 p-4">
         <h3 className="flex items-center gap-1.5 text-sm font-semibold">
           Nova API key
-          <Tooltip text="Para integrar outro sistema da redação com o JornIA (ex.: enviar pautas automaticamente). Não é necessária para o uso normal pelo site." />
+          <Tooltip text="Para integrar outro sistema da redação com o JornAI (ex.: enviar pautas automaticamente). Não é necessária para o uso normal pelo site." />
         </h3>
         <input className="input" placeholder="Nome da chave" value={name}
           onChange={(e) => setName(e.target.value)} />

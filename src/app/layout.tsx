@@ -13,7 +13,7 @@ const poppins = Poppins({
 });
 
 export const metadata: Metadata = {
-  title: "JornIA — publicação rápida no Instagram com IA",
+  title: "JornAI — publicação rápida no Instagram com IA",
   description:
     "Da fonte ao feed em minutos: IA redige o texto, o jornalista ajusta a arte e o editor aprova antes de publicar no Instagram.",
 };

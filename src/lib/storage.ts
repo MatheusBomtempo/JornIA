@@ -130,7 +130,7 @@ export async function deleteObjectByUrl(url: string): Promise<void> {
   const storage = getStorage();
   const key = storage.keyFromUrl(url);
   if (!key) {
-    console.warn(`[JornIA] URL fora do storage configurado, ignorando: ${url}`);
+    console.warn(`[JornAI] URL fora do storage configurado, ignorando: ${url}`);
     return;
   }
   await storage.delete(key);

@@ -7,7 +7,7 @@ import { badRequest, notFound, ok, route } from "@/lib/http";
 
 /**
  * POST /users/:id/reset-password — manager/admin geram uma senha nova pro
- * usuário e mandam por e-mail (Resend). Ninguém vê a senha na tela — nem
+ * usuário e mandam por e-mail (Gmail). Ninguém vê a senha na tela — nem
  * quem disparou o reset: ela só existe em memória o tempo de gerar o hash
  * e montar o e-mail, nunca é salva em texto puro nem devolvida na resposta.
  */
@@ -26,13 +26,12 @@ export const POST = route(
     const tempPassword = generateTempPassword();
     const passwordResetAt = new Date();
 
-    let deliveredTo: string;
     try {
-      ({ deliveredTo } = await sendCredentialsEmail({
+      await sendCredentialsEmail({
         to: target.email,
         name: target.name,
         password: tempPassword,
-      }));
+      });
     } catch (err) {
       // Motivo real na tela pra quem disparou (é sempre admin/manager, não
       // tem risco de vazar detalhe interno pra alguém sem permissão) — sem
@@ -50,6 +49,6 @@ export const POST = route(
       },
     });
 
-    return ok({ sentAt: passwordResetAt.toISOString(), deliveredTo });
+    return ok({ sentAt: passwordResetAt.toISOString() });
   },
 );

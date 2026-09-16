@@ -13,7 +13,7 @@ const MAX_DIMENSION = 1600; // a arte final nunca passa de ~1080-1350px de lado
  * Upload de mídia para o storage configurado. Retorna a URL pública usada
  * depois em POST /posts, /art-templates, etc. Dois usos, tratados diferente:
  *  - "photo" (padrão): foto de origem, só usada internamente (workspace/feed
- *    do JornIA e como insumo do render — nunca publicada direto). Recomprimida
+ *    do JornAI e como insumo do render — nunca publicada direto). Recomprimida
  *    forte: reduz custo de storage sem afetar a arte que vai pro Instagram.
  *  - "overlay": PNG do template (tem transparência, é o design em si) —
  *    gravado como veio, sem recomprimir/achatar o canal alfa.

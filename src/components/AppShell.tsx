@@ -39,7 +39,7 @@ export function AppShell({ user, children }: Props) {
       <header className="sticky top-0 z-30 border-b border-line bg-bg/85 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl items-center gap-4 px-4 py-3">
           <Link href="/dashboard" className="text-lg font-extrabold tracking-tight">
-            Jorn<span className="text-brand-400">IA</span>
+            Jorn<span className="text-brand-400">AI</span>
           </Link>
 
           {/* Nav desktop */}

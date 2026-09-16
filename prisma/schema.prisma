@@ -1,4 +1,4 @@
-// JornIA — schema do banco (PostgreSQL)
+// JornAI — schema do banco (PostgreSQL)
 // Mapeado 1:1 do SPEC.md. Campos "status"/"origin"/"decision" ficam como String
 // (validados no app via Zod) para bater exatamente com o SPEC; user_role é enum.
 
