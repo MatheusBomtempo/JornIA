@@ -142,6 +142,7 @@ export function TemplateBuilder({ onCreated }: { onCreated?: () => void }) {
     try {
       const fd = new FormData();
       fd.append("file", file);
+      fd.append("kind", "overlay");
       const { url } = await apiPost<{ url: string }>("/api/upload", fd);
       setOverlayUrl(url);
     } catch (err) {

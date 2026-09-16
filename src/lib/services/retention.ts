@@ -1,26 +1,86 @@
 import "server-only";
 import { prisma } from "../db";
+import { deleteObjectByUrl } from "../storage";
+
+const PUBLISHED_TTL_DAYS = 2;
+const PENDING_TTL_DAYS = 3; // in_review | failed
+
+/**
+ * Limpeza de posts expirados (publicado há mais de 2 dias, ou em revisão/
+ * falhou há mais de 3). "Apagar" nunca mexe no Instagram — só remove do
+ * nosso banco+storage. Antes de apagar, grava uma linha mínima em
+ * post_audit_log (via purge_posts, ver prisma/migrations/..._purge_posts_function)
+ * para auditoria futura.
+ *
+ * A regra de expiração mora aqui (não em SQL) de propósito: só o app
+ * consegue apagar o arquivo real no R2, então o app precisa decidir "quem
+ * expirou" antes de apagar storage, e usar o MESMO conjunto de ids depois
+ * pra apagar as linhas do banco — daí purge_posts(ids) receber ids prontos
+ * em vez de recalcular a regra.
+ */
+export async function cleanupExpiredPosts(): Promise<{ purged: number }> {
+  const publishedCutoff = new Date(Date.now() - PUBLISHED_TTL_DAYS * 86_400_000);
+  const pendingCutoff = new Date(Date.now() - PENDING_TTL_DAYS * 86_400_000);
+
+  const expired = await prisma.post.findMany({
+    where: {
+      OR: [
+        { status: "published", updatedAt: { lt: publishedCutoff } },
+        { status: { in: ["in_review", "failed"] }, updatedAt: { lt: pendingCutoff } },
+      ],
+    },
+    select: {
+      id: true,
+      photos: { select: { storageUrl: true } },
+      versions: { select: { renderedArtUrl: true } },
+    },
+  });
+  if (expired.length === 0) return { purged: 0 };
+
+  const urls = new Set<string>();
+  for (const post of expired) {
+    for (const photo of post.photos) urls.add(photo.storageUrl);
+    for (const version of post.versions) {
+      if (version.renderedArtUrl) urls.add(version.renderedArtUrl);
+    }
+  }
+
+  // Apaga o storage primeiro; se uma URL falhar, loga e segue — a política de
+  // retenção (o dado tem que sumir do banco no prazo) importa mais que um
+  // objeto órfão raro no R2, que não pesa nada no uso (ver conversa sobre
+  // custo de storage).
+  await Promise.all(
+    [...urls].map((url) =>
+      deleteObjectByUrl(url).catch((err) =>
+        console.error(`[JornIA] Falha ao apagar do storage (${url}):`, err),
+      ),
+    ),
+  );
+
+  const ids = expired.map((p) => p.id);
+  await prisma.$executeRaw`SELECT purge_posts(${ids}::uuid[]);`;
+
+  return { purged: ids.length };
+}
 
 const THROTTLE_MS = 60 * 60 * 1000; // no máximo 1x por hora
 let lastRunAt = 0;
 
 /**
- * Aciona a limpeza de posts expirados. A regra em si (o que apagar, quando,
- * e o log mínimo que fica) mora inteira no banco, na função PL/pgSQL
- * `cleanup_expired_posts()` (ver prisma/migrations/..._cleanup_expired_posts_function).
- * Isso é só o "despertador": sem pg_cron disponível no Postgres do Windows
- * local, chamamos a função de forma oportunista sempre que alguém carrega o
- * feed, com throttle pra não bater no banco a cada requisição. Num host que
- * tenha pg_cron/pgAgent, basta agendar `SELECT cleanup_expired_posts();` lá
- * e remover esta chamada — nenhuma outra mudança necessária.
+ * Despertador oportunista: roda a limpeza quando alguém carrega o feed, com
+ * throttle em memória — só um backstop para dev local (sem cron). Em prod
+ * (Vercel), quem manda é o Vercel Cron batendo em /api/cron/cleanup 1x/dia
+ * (ver vercel.json); esta função continua inofensiva ali porque o throttle
+ * em memória zera a cada cold start, mas cleanupExpiredPosts() é barata
+ * quando não há nada expirado.
  */
 export async function maybeCleanupExpiredPosts(): Promise<void> {
   const now = Date.now();
   if (now - lastRunAt < THROTTLE_MS) return;
   lastRunAt = now;
   try {
-    await prisma.$executeRaw`SELECT cleanup_expired_posts();`;
+    await cleanupExpiredPosts();
   } catch (err) {
-    console.error("[JornIA] Falha ao rodar cleanup_expired_posts:", err);
+    console.error("[JornIA] Falha ao rodar cleanupExpiredPosts:", err);
   }
 }

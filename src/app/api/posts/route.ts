@@ -5,6 +5,11 @@ import { createPostWithAi, listPosts } from "@/lib/services/posts";
 import { maybeCleanupExpiredPosts } from "@/lib/services/retention";
 import { created, ok, route } from "@/lib/http";
 
+// POST pode rodar 2 passadas pela corrente de IA (validação + regeneração
+// corretiva) — sem isso a função é morta pelo Vercel antes de terminar
+// (502 sem log de erro nosso, visto em produção).
+export const maxDuration = 60;
+
 // GET /posts — listagem (filtros: ?status=&mine=1)
 export const GET = route(async (req: NextRequest) => {
   const user = await requireUser();

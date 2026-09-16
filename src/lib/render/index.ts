@@ -40,11 +40,26 @@ export interface RenderArtParams {
   subtitleOffset?: unknown;
 }
 
-/** Aplica o deslocamento (se houver) mantendo largura/altura do slot intactas. */
-function offsetSlot(slot: TextSlot, rawOffset: unknown): TextSlot {
+/**
+ * Aplica o deslocamento (se houver) mantendo largura/altura do slot intactas.
+ * Trava dentro dos limites do canvas — sem isso, um deslocamento grande o
+ * suficiente empurra a caixa de texto pra fora da arte e o texto é cortado
+ * na borda (a largura de quebra de linha continua a do slot original, então
+ * uma caixa deslocada pra além do canvas nunca cabia de volta).
+ */
+function offsetSlot(
+  slot: TextSlot,
+  rawOffset: unknown,
+  canvasWidth: number,
+  canvasHeight: number,
+): TextSlot {
   const { offsetX, offsetY } = textOffsetSchema.parse(rawOffset ?? {});
   if (!offsetX && !offsetY) return slot;
-  return { ...slot, x: slot.x + offsetX, y: slot.y + offsetY };
+  const maxX = Math.max(0, canvasWidth - slot.width);
+  const maxY = Math.max(0, canvasHeight - slot.height);
+  const x = Math.min(Math.max(slot.x + offsetX, 0), maxX);
+  const y = Math.min(Math.max(slot.y + offsetY, 0), maxY);
+  return { ...slot, x, y };
 }
 
 export async function renderArt(params: RenderArtParams): Promise<Buffer> {
@@ -84,12 +99,12 @@ export async function renderArt(params: RenderArtParams): Promise<Buffer> {
   // a posição — largura, fonte e quebra de linha continuam do template.
   const title = await renderTextToSvg(
     params.title ?? "",
-    offsetSlot(titleSlot, params.titleOffset),
+    offsetSlot(titleSlot, params.titleOffset, params.canvasWidth, params.canvasHeight),
   );
   const subtitle = subtitleSlot
     ? await renderTextToSvg(
         params.subtitle ?? "",
-        offsetSlot(subtitleSlot, params.subtitleOffset),
+        offsetSlot(subtitleSlot, params.subtitleOffset, params.canvasWidth, params.canvasHeight),
       )
     : { svg: "", height: 0, lines: 0 };
 

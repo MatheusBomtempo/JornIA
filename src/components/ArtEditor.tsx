@@ -144,6 +144,22 @@ export function ArtEditor({ postId, photos, templates, initial, onSaved }: Props
     };
   }, []);
 
+  /** Trava a caixa de texto dentro do canvas — mesma regra do render final (offsetSlot). */
+  const clampTextBox = useCallback((box: any, slotDef: Slot) => {
+    const r = fx.current;
+    if (!r || !box) return;
+    const maxLeft = Math.max(0, displayW - slotDef.width * r.dispScale);
+    const maxTop = Math.max(
+      0,
+      (template?.canvasHeight ?? 0) * r.dispScale - slotDef.height * r.dispScale,
+    );
+    box.set({
+      left: Math.min(maxLeft, Math.max(0, box.left)),
+      top: Math.min(maxTop, Math.max(0, box.top)),
+    });
+    box.setCoords();
+  }, [displayW, template]);
+
   /** Lê o deslocamento atual de um texto em relação à posição padrão do template. */
   const readTextOffset = useCallback(
     (kind: TextKind): Offset => {
@@ -291,10 +307,12 @@ export function ArtEditor({ postId, photos, templates, initial, onSaved }: Props
           setZoom(transformRef.current.scale);
         }
         if (target === titleBox) {
+          clampTextBox(titleBox, template.titleSlot);
           titleOffsetRef.current = readTextOffset("title");
           setTextMoved(hasOffset(titleOffsetRef.current) || hasOffset(subtitleOffsetRef.current));
         }
-        if (target === subtitleBox) {
+        if (target === subtitleBox && template.subtitleSlot) {
+          clampTextBox(subtitleBox, template.subtitleSlot);
           subtitleOffsetRef.current = readTextOffset("subtitle");
           setTextMoved(hasOffset(titleOffsetRef.current) || hasOffset(subtitleOffsetRef.current));
         }

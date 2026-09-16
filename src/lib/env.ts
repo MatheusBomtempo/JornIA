@@ -28,6 +28,9 @@ export const env = {
     ),
   authSessionTtl: () => Number(process.env.AUTH_SESSION_TTL ?? 604800),
 
+  /** Autentica o Vercel Cron em /api/cron/*. Sem isso, o endpoint fica aberto. */
+  cronSecret: process.env.CRON_SECRET,
+
   ai: {
     provider: (process.env.AI_PROVIDER ?? "anthropic").toLowerCase(),
     model: process.env.AI_MODEL ?? "claude-sonnet-5",

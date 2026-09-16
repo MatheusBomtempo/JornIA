@@ -6,7 +6,49 @@ import path from "node:path";
 
 const prisma = new PrismaClient();
 
-const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL ?? "http://localhost:3000";
+/**
+ * Versão standalone de src/lib/storage.ts#putObject: esse script roda via
+ * `tsx` puro (fora do bundler do Next), e storage.ts tem `import "server-only"`
+ * no topo — que lança erro fora de um bundler Next. Duplicar aqui em vez de
+ * enfraquecer aquela guarda (ela existe pra nunca deixar código server-only
+ * vazar pro bundle do client).
+ */
+async function putSeedAsset(
+  key: string,
+  body: Buffer,
+  contentType: string,
+): Promise<string> {
+  if ((process.env.STORAGE_PROVIDER ?? "local").toLowerCase() === "s3") {
+    const { S3Client, PutObjectCommand } = await import("@aws-sdk/client-s3");
+    const bucket = process.env.S3_BUCKET;
+    const publicUrl = process.env.S3_PUBLIC_URL?.replace(/\/$/, "");
+    if (!bucket) throw new Error("S3_BUCKET não configurado.");
+    if (!publicUrl) throw new Error("S3_PUBLIC_URL não configurado.");
+    const client = new S3Client({
+      region: process.env.S3_REGION ?? "auto",
+      endpoint: process.env.S3_ENDPOINT,
+      forcePathStyle: process.env.S3_FORCE_PATH_STYLE === "true",
+      credentials:
+        process.env.S3_ACCESS_KEY_ID && process.env.S3_SECRET_ACCESS_KEY
+          ? {
+              accessKeyId: process.env.S3_ACCESS_KEY_ID,
+              secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
+            }
+          : undefined,
+    });
+    await client.send(
+      new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: contentType }),
+    );
+    return `${publicUrl}/${key}`;
+  }
+
+  const dir = path.join(process.cwd(), "public", "uploads");
+  const dest = path.join(dir, key);
+  await fs.mkdir(path.dirname(dest), { recursive: true });
+  await fs.writeFile(dest, body);
+  const base = (process.env.PUBLIC_BASE_URL ?? "http://localhost:3000").replace(/\/$/, "");
+  return `${base}/uploads/${key}`;
+}
 
 async function ensureUser(
   name: string,
@@ -30,9 +72,6 @@ async function ensureUser(
  * Substitua pelo PNG do seu Canva em Admin → Templates.
  */
 async function ensureOverlay(w: number, h: number, file: string): Promise<string> {
-  const dir = path.join(process.cwd(), "public", "uploads", "templates");
-  await fs.mkdir(dir, { recursive: true });
-
   const panelTop = Math.round(h * 0.58);
   const fadeTop = Math.round(h * 0.44);
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">
@@ -49,8 +88,8 @@ async function ensureOverlay(w: number, h: number, file: string): Promise<string
           font-weight="700" fill="#7f9cff" letter-spacing="3">SEU JORNAL</text>
   </svg>`;
 
-  await sharp(Buffer.from(svg)).png().toFile(path.join(dir, file));
-  return `${PUBLIC_BASE_URL}/uploads/templates/${file}`;
+  const buffer = await sharp(Buffer.from(svg)).png().toBuffer();
+  return putSeedAsset(`templates/${file}`, buffer, "image/png");
 }
 
 /** Slots proporcionais ao formato, com os tamanhos medidos no Canva. */
@@ -81,8 +120,15 @@ async function main() {
     process.env.SEED_ADMIN_PASSWORD ?? "admin12345",
     "admin",
   );
-  await ensureUser("Editor Exemplo", "editor@jornia.local", "editor12345", "manager");
-  await ensureUser("Jornalista Exemplo", "reporter@jornia.local", "reporter123", "staff");
+  // Contas de exemplo com senha fixa no código-fonte (que é público) — só
+  // fazem sentido em dev local. Pular em produção evita deixar login válido
+  // documentado no repo aberto pra qualquer um.
+  if (process.env.NODE_ENV !== "production") {
+    await ensureUser("Editor Exemplo", "editor@jornia.local", "editor12345", "manager");
+    await ensureUser("Jornalista Exemplo", "reporter@jornia.local", "reporter123", "staff");
+  } else {
+    console.log("  contas de exemplo (editor/repórter): puladas em produção");
+  }
 
   // ── Exemplos de estilo (posts reais do jornal) ─────────────
   if ((await prisma.styleExample.count()) === 0) {
