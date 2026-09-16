@@ -11,7 +11,7 @@ export default async function AdminPage() {
   if (!user) return null;
 
   return (
-    <AppShell user={{ name: user.name, role: user.role }}>
+    <AppShell user={{ name: user.name, role: user.role, mustSetPassword: user.passwordResetAt !== null }}>
       <header className="mb-5">
         <h1 className="text-xl font-bold tracking-tight">Administração</h1>
         <p className="mt-1 text-sm text-muted">

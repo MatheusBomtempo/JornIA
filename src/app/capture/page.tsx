@@ -10,7 +10,7 @@ export default async function CapturePage() {
   if (!user) return null;
 
   return (
-    <AppShell user={{ name: user.name, role: user.role }}>
+    <AppShell user={{ name: user.name, role: user.role, mustSetPassword: user.passwordResetAt !== null }}>
       <div className="mx-auto max-w-2xl">
         <header className="mb-4">
           <h1 className="text-xl font-bold tracking-tight">Nova pauta</h1>

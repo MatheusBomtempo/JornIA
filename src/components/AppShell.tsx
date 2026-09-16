@@ -4,9 +4,10 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { apiPost } from "@/lib/api-client";
 import { ROLE_LABELS, type UserRole } from "@/lib/domain";
+import { ChangePasswordBanner } from "./ChangePasswordBanner";
 
 interface Props {
-  user: { name: string; role: UserRole };
+  user: { name: string; role: UserRole; mustSetPassword?: boolean };
   children: React.ReactNode;
 }
 
@@ -76,6 +77,7 @@ export function AppShell({ user, children }: Props) {
 
       {/* Espaço extra embaixo para a barra de navegação fixa do mobile */}
       <main className="mx-auto max-w-6xl px-4 pt-5 pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-10">
+        {user.mustSetPassword && <ChangePasswordBanner />}
         {children}
       </main>
 

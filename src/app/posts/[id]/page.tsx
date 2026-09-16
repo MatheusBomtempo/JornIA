@@ -81,7 +81,7 @@ export default async function PostPage({
   };
 
   return (
-    <AppShell user={{ name: user.name, role: user.role }}>
+    <AppShell user={{ name: user.name, role: user.role, mustSetPassword: user.passwordResetAt !== null }}>
       <PostWorkspace
         user={{ id: user.id, name: user.name, role: user.role }}
         post={serialized}

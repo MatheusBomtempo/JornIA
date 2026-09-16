@@ -55,6 +55,9 @@ export async function sendCredentialsEmail(params: {
           Entrar no JornAI
         </a>
       </p>
+      <p style="color: #666; font-size: 13px;">
+        Essa senha é temporária. Depois de entrar, o app sugere cadastrar uma senha sua.
+      </p>
       <p style="color: #888; font-size: 13px; margin-top: 24px;">
         Se você não esperava este e-mail, avise quem administra o JornAI na sua redação.
       </p>

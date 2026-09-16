@@ -69,9 +69,15 @@ export async function requireUser(): Promise<User> {
   return user;
 }
 
-/** Senha temporária forte, pra reset feito por admin/manager (ver /users/:id/reset-password). */
+/**
+ * Senha temporária pra login novo ou reset feito por admin/manager (ver
+ * /users routes) — padrão "sucesso" + 2 dígitos (ex.: "sucesso57"), fácil de
+ * passar verbalmente/por e-mail; a pessoa troca no primeiro acesso (ver
+ * /api/auth/change-password).
+ */
 export function generateTempPassword(): string {
-  return randomBytes(12).toString("base64url"); // 16 chars, sem ambiguidade
+  const digits = randomBytes(1)[0] % 100;
+  return `sucesso${digits.toString().padStart(2, "0")}`;
 }
 
 // ── API keys ─────────────────────────────────────────────────

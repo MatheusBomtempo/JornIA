@@ -23,6 +23,11 @@ export const loginSchema = z.object({
   password: z.string().min(1),
 });
 
+/** Usuário logado troca a própria senha (ver /api/auth/change-password). */
+export const changePasswordSchema = z.object({
+  password: z.string().min(8, "A senha precisa ter ao menos 8 caracteres."),
+});
+
 // ── Posts ────────────────────────────────────────────────────
 /**
  * Captura unificada: o jornalista manda o que tem — texto OU link — mais

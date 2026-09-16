@@ -26,9 +26,10 @@ export const GET = route(async () => {
 });
 
 // POST /users — manager/admin criam usuário. Manager só cria manager/staff —
-// só admin promove admin (pedido explícito do dono do produto). Senha é
-// sempre gerada forte no servidor e mandada por e-mail (login automático)
-// — quem cria nunca digita nem vê a senha.
+// só admin promove admin (pedido explícito do dono do produto). Senha
+// temporária ("sucessoNN") é sempre gerada no servidor e mandada por e-mail
+// (login automático) — quem cria nunca digita nem vê a senha. A pessoa troca
+// por uma própria depois de entrar (ver /api/auth/change-password).
 export const POST = route(async (req: NextRequest) => {
   const actor = await requireUser();
   requireRole(actor, "manager", "admin");

@@ -18,7 +18,7 @@ export default async function DashboardPage() {
   const [posts, auditLogs] = await Promise.all([listPosts(), listAuditLogs()]);
 
   return (
-    <AppShell user={{ name: user.name, role: user.role }}>
+    <AppShell user={{ name: user.name, role: user.role, mustSetPassword: user.passwordResetAt !== null }}>
       <div className="alert-info mb-5">
         🎬 Em breve: suporte a <strong>vídeos</strong>, além de foto — mesma
         proposta, novo formato de post.
