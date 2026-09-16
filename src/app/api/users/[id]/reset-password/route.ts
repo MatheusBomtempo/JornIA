@@ -3,7 +3,7 @@ import { requireUser, generateTempPassword, hashPassword } from "@/lib/auth";
 import { requireRole } from "@/lib/rbac";
 import { sendCredentialsEmail } from "@/lib/email";
 import { prisma } from "@/lib/db";
-import { notFound, ok, route } from "@/lib/http";
+import { badRequest, notFound, ok, route } from "@/lib/http";
 
 /**
  * POST /users/:id/reset-password — manager/admin geram uma senha nova pro
@@ -26,11 +26,19 @@ export const POST = route(
     const tempPassword = generateTempPassword();
     const passwordResetAt = new Date();
 
-    await sendCredentialsEmail({
-      to: target.email,
-      name: target.name,
-      password: tempPassword,
-    });
+    let deliveredTo: string;
+    try {
+      ({ deliveredTo } = await sendCredentialsEmail({
+        to: target.email,
+        name: target.name,
+        password: tempPassword,
+      }));
+    } catch (err) {
+      // Motivo real na tela pra quem disparou (é sempre admin/manager, não
+      // tem risco de vazar detalhe interno pra alguém sem permissão) — sem
+      // isso só dava pra saber a causa lendo o log do servidor.
+      throw badRequest(`Falha ao enviar e-mail: ${(err as Error).message}`);
+    }
 
     // Só atualiza o hash DEPOIS do e-mail sair — se o envio falhar, a senha
     // antiga continua valendo (evita trocar acesso sem a pessoa saber a nova).
@@ -42,6 +50,6 @@ export const POST = route(
       },
     });
 
-    return ok({ sentAt: passwordResetAt.toISOString() });
+    return ok({ sentAt: passwordResetAt.toISOString(), deliveredTo });
   },
 );

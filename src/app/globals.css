@@ -100,6 +100,9 @@ body {
   .alert-info {
     @apply rounded-xl border border-brand-500/25 bg-brand-500/10 px-3.5 py-2.5 text-sm text-brand-200;
   }
+  .alert-success {
+    @apply rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3.5 py-2.5 text-sm text-emerald-300;
+  }
 }
 
 /* Impede zoom automático do iOS ao focar campos */

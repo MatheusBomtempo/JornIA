@@ -114,10 +114,11 @@ export const artTemplateSchema = z.object({
 });
 
 // ── Users ────────────────────────────────────────────────────
+// Sem campo de senha: sempre gerada forte no servidor e mandada por e-mail
+// (nunca digitada por quem cria) — ver /api/users POST.
 export const createUserSchema = z.object({
   name: z.string().min(1),
   email: z.string().email(),
-  password: z.string().min(8, "A senha deve ter ao menos 8 caracteres."),
   role: z.enum(USER_ROLES).default("staff"),
 });
 

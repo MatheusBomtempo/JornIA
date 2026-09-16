@@ -297,11 +297,10 @@ interface AdminUser {
 function UsersSection({ canPromoteAdmin }: { canPromoteAdmin: boolean }) {
   const { error, wrap } = useAsyncError();
   const [users, setUsers] = useState<AdminUser[]>([]);
-  const [form, setForm] = useState({
-    name: "", email: "", password: "", role: "staff" as UserRole,
-  });
+  const [form, setForm] = useState({ name: "", email: "", role: "staff" as UserRole });
   const [resetting, setResetting] = useState<string | null>(null);
   const [resetError, setResetError] = useState<string | null>(null);
+  const [resetSuccess, setResetSuccess] = useState<string | null>(null);
   const assignableRoles = canPromoteAdmin
     ? USER_ROLES
     : USER_ROLES.filter((r) => r !== "admin");
@@ -314,8 +313,26 @@ function UsersSection({ canPromoteAdmin }: { canPromoteAdmin: boolean }) {
 
   const create = () =>
     wrap(async () => {
-      await apiPost("/api/users", form);
-      setForm({ name: "", email: "", password: "", role: "staff" });
+      setResetError(null);
+      setResetSuccess(null);
+      const { user, emailSent, emailError, deliveredTo } = await apiPost<{
+        user: AdminUser;
+        emailSent: boolean;
+        emailError?: string;
+        deliveredTo?: string;
+      }>("/api/users", form);
+      setForm({ name: "", email: "", role: "staff" });
+      if (emailSent) {
+        setResetSuccess(
+          deliveredTo && deliveredTo !== user.email
+            ? `Usuário criado. Login enviado para ${deliveredTo} (endereço de teste — fora de produção não manda pro e-mail real).`
+            : `Usuário criado e login enviado para ${user.email}.`,
+        );
+      } else {
+        setResetError(
+          `Usuário criado, mas o e-mail falhou: ${emailError}. Use "Reenviar login" depois de resolver.`,
+        );
+      }
       await load();
     });
 
@@ -334,9 +351,17 @@ function UsersSection({ canPromoteAdmin }: { canPromoteAdmin: boolean }) {
       return;
     }
     setResetError(null);
+    setResetSuccess(null);
     setResetting(u.id);
     try {
-      await apiPost(`/api/users/${u.id}/reset-password`);
+      const { deliveredTo } = await apiPost<{ deliveredTo?: string }>(
+        `/api/users/${u.id}/reset-password`,
+      );
+      setResetSuccess(
+        deliveredTo && deliveredTo !== u.email
+          ? `Login enviado para ${deliveredTo} (endereço de teste — fora de produção não manda pro e-mail real).`
+          : `Login enviado para ${u.email}.`,
+      );
       await load();
     } catch (err) {
       setResetError((err as Error).message);
@@ -353,8 +378,6 @@ function UsersSection({ canPromoteAdmin }: { canPromoteAdmin: boolean }) {
           onChange={(e) => setForm({ ...form, name: e.target.value })} />
         <input className="input" placeholder="E-mail" type="email" value={form.email}
           onChange={(e) => setForm({ ...form, email: e.target.value })} />
-        <input className="input" placeholder="Senha (mín. 8)" type="password" value={form.password}
-          onChange={(e) => setForm({ ...form, password: e.target.value })} />
         <select className="input" value={form.role}
           onChange={(e) => setForm({ ...form, role: e.target.value as UserRole })}>
           {assignableRoles.map((r) => (
@@ -371,6 +394,7 @@ function UsersSection({ canPromoteAdmin }: { canPromoteAdmin: boolean }) {
       <div className="space-y-2">
         <h3 className="text-sm font-semibold">Usuários ({users.length})</h3>
         {resetError && <p className="alert-error">{resetError}</p>}
+        {resetSuccess && <p className="alert-success">✅ {resetSuccess}</p>}
         {users.map((u) => (
           <div key={u.id} className="card flex flex-wrap items-center gap-2 p-3">
             <div className="min-w-0 flex-1">
@@ -403,7 +427,7 @@ function UsersSection({ canPromoteAdmin }: { canPromoteAdmin: boolean }) {
               disabled={resetting === u.id}
               title="Gera uma senha nova e manda por e-mail"
             >
-              {resetting === u.id ? "Enviando…" : "Enviar login"}
+              {resetting === u.id ? "Enviando…" : "Reenviar login"}
             </button>
             <button
               className={u.active ? "btn-ghost btn-sm" : "btn-success btn-sm"}
