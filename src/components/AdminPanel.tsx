@@ -585,13 +585,13 @@ function SettingsSection() {
           aria-label={t.reviewToggleTitle}
           onClick={toggleReview}
           disabled={saving}
-          className={`relative h-7 w-12 shrink-0 rounded-full transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-60 ${
+          className={`inline-flex h-7 w-12 shrink-0 items-center rounded-full p-1 transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-60 ${
             settings.reviewRequired ? "bg-emerald-500" : "bg-line"
           }`}
         >
           <span
-            className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-soft transition-transform duration-200 ${
-              settings.reviewRequired ? "translate-x-6" : "translate-x-1"
+            className={`inline-block h-5 w-5 rounded-full bg-white shadow-soft transition-transform duration-200 ${
+              settings.reviewRequired ? "translate-x-5" : "translate-x-0"
             }`}
           />
         </button>
