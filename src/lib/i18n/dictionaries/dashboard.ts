@@ -1,0 +1,38 @@
+export const dashboard = {
+  pt: {
+    videoBannerPrefix: "Em breve: suporte a ",
+    videoBannerBold: "vídeos",
+    videoBannerSuffix: ", além de foto — mesma proposta, novo formato de post.",
+    title: "Feed de pautas",
+    postCountOne: "post no fluxo",
+    postCountOther: "posts no fluxo",
+    newStory: "+ Nova pauta",
+    emptyTitle: "Nenhuma pauta ainda",
+    emptyDescription: "Cole um texto ou um link, anexe a foto e a IA monta o post pra você.",
+    emptyCta: "Criar a primeira pauta",
+    artNotGenerated: "arte ainda não gerada",
+    untitled: "(sem título)",
+    purgedSectionTitle: "Publicações removidas automaticamente",
+    purgedSectionHint:
+      "Limpeza de retenção: posts publicados somem do banco 2 dias depois (o post no Instagram continua no ar); em revisão ou falhos que passam 3 dias sem aprovação também saem. Fica só este registro básico, pra auditoria futura.",
+    purgedAt: "apagado",
+  },
+  en: {
+    videoBannerPrefix: "Coming soon: support for ",
+    videoBannerBold: "videos",
+    videoBannerSuffix: ", alongside photos — same idea, new post format.",
+    title: "Story feed",
+    postCountOne: "post in the pipeline",
+    postCountOther: "posts in the pipeline",
+    newStory: "+ New story",
+    emptyTitle: "No stories yet",
+    emptyDescription: "Paste a text or a link, attach the photo, and the AI puts the post together for you.",
+    emptyCta: "Create the first story",
+    artNotGenerated: "art not generated yet",
+    untitled: "(untitled)",
+    purgedSectionTitle: "Automatically removed publications",
+    purgedSectionHint:
+      "Retention cleanup: published posts disappear from the database 2 days later (the Instagram post stays live); posts in review or failed ones that go 3 days without approval are also removed. Only this basic record remains, for future auditing.",
+    purgedAt: "purged",
+  },
+};

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiPost } from "@/lib/api-client";
 import { applyTextCase, type TextTransform } from "@/lib/text-case";
+import { useLocale } from "./LocaleProvider";
 
 interface Slot {
   x: number;
@@ -60,6 +61,7 @@ export const TITLE_MAX = 69;
 export const SUBTITLE_MAX = 149;
 
 export function ArtEditor({ postId, photos, templates, initial, onSaved }: Props) {
+  const { dict } = useLocale();
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasEl = useRef<HTMLCanvasElement>(null);
   const fx = useRef<{
@@ -413,15 +415,16 @@ export function ArtEditor({ postId, photos, templates, initial, onSaved }: Props
         <canvas ref={canvasEl} className="w-full touch-none rounded-xl border border-line" />
       </div>
       <p className="text-center text-xs text-muted">
-        Arraste a foto para enquadrar. Arraste o{" "}
-        <span className="text-amber-400">título</span> ou o{" "}
-        <span className="text-emerald-400">subtítulo</span> para reposicionar o
-        texto — o template continua igual, só muda nesta pauta.
+        {dict.artEditor.helper.dragPhoto}{" "}
+        <span className="text-amber-400">{dict.artEditor.helper.titleWord}</span>{" "}
+        {dict.artEditor.helper.orSubtitle}{" "}
+        <span className="text-emerald-400">{dict.artEditor.helper.subtitleWord}</span>{" "}
+        {dict.artEditor.helper.suffix}
       </p>
 
       <div className="card-soft p-3">
         <div className="mb-2 flex items-center justify-between">
-          <label htmlFor="zoom" className="text-xs font-medium text-muted">Zoom da foto</label>
+          <label htmlFor="zoom" className="text-xs font-medium text-muted">{dict.artEditor.zoomLabel}</label>
           <span className="text-xs tabular-nums text-faint">{zoom.toFixed(2)}×</span>
         </div>
         <input
@@ -436,27 +439,27 @@ export function ArtEditor({ postId, photos, templates, initial, onSaved }: Props
           resetTextPosition("title");
           resetTextPosition("subtitle");
         }}>
-          ↺ Restaurar posição padrão do texto
+          {dict.artEditor.resetTextPosition}
         </button>
       )}
 
       <CharField
-        id="art-title" label="Título na imagem" max={TITLE_MAX}
+        id="art-title" label={dict.artEditor.titleFieldLabel} max={TITLE_MAX}
         value={title} onChange={setTitle}
-        placeholder="Manchete curta e direta"
+        placeholder={dict.artEditor.titleFieldPlaceholder}
       />
 
       {template?.subtitleSlot && (
         <CharField
-          id="art-subtitle" label="Subtítulo na imagem" max={SUBTITLE_MAX}
+          id="art-subtitle" label={dict.artEditor.subtitleFieldLabel} max={SUBTITLE_MAX}
           value={subtitle} onChange={setSubtitle} rows={2}
-          placeholder="Um detalhe que o título não contou"
+          placeholder={dict.artEditor.subtitleFieldPlaceholder}
         />
       )}
 
       {templates.length > 1 && (
         <div>
-          <label className="label" htmlFor="tpl">Formato</label>
+          <label className="label" htmlFor="tpl">{dict.artEditor.formatLabel}</label>
           <select
             id="tpl" className="input" value={templateId}
             onChange={(e) => setTemplateId(e.target.value)}
@@ -473,7 +476,7 @@ export function ArtEditor({ postId, photos, templates, initial, onSaved }: Props
       {error && <p className="alert-error">{error}</p>}
 
       <button onClick={save} className="btn-primary w-full" disabled={saving}>
-        {saving ? "Gerando a arte…" : "Salvar arte e revisar"}
+        {saving ? dict.artEditor.savingButton : dict.artEditor.saveButton}
       </button>
     </div>
   );

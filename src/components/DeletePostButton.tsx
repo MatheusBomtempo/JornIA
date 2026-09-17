@@ -4,6 +4,7 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { apiDelete } from "@/lib/api-client";
+import { useLocale } from "./LocaleProvider";
 
 /**
  * Botão de apagar direto no card do feed. O card inteiro é um <Link>, então
@@ -13,6 +14,7 @@ import { apiDelete } from "@/lib/api-client";
  */
 export function DeletePostButton({ postId }: { postId: string }) {
   const router = useRouter();
+  const { dict } = useLocale();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -49,8 +51,8 @@ export function DeletePostButton({ postId }: { postId: string }) {
       <button
         type="button"
         onClick={openConfirm}
-        title="Apagar pauta"
-        aria-label="Apagar pauta"
+        title={dict.deletePostButton.buttonTitle}
+        aria-label={dict.deletePostButton.buttonTitle}
         className="absolute right-2 top-2 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-red-500/90 text-white shadow-soft ring-1 ring-inset ring-red-400/40 transition-colors hover:bg-red-600 active:bg-red-700"
       >
         <TrashIcon />
@@ -76,11 +78,10 @@ export function DeletePostButton({ postId }: { postId: string }) {
                 <TrashIcon />
               </div>
               <h2 id="delete-post-title" className="text-base font-semibold text-ink">
-                Apagar esta pauta?
+                {dict.deletePostButton.dialogTitle}
               </h2>
               <p className="mt-1.5 text-sm text-muted">
-                Some do feed e do storage agora mesmo — foto, arte e histórico. Não dá
-                pra desfazer.
+                {dict.deletePostButton.dialogDescription}
               </p>
               {error && <p className="alert-error mt-3">{error}</p>}
               <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -93,7 +94,7 @@ export function DeletePostButton({ postId }: { postId: string }) {
                   }}
                   disabled={busy}
                 >
-                  Cancelar
+                  {dict.deletePostButton.cancel}
                 </button>
                 <button
                   type="button"
@@ -101,7 +102,7 @@ export function DeletePostButton({ postId }: { postId: string }) {
                   onClick={confirmDelete}
                   disabled={busy}
                 >
-                  {busy ? "Apagando…" : "Apagar pauta"}
+                  {busy ? dict.deletePostButton.confirming : dict.deletePostButton.confirm}
                 </button>
               </div>
             </div>

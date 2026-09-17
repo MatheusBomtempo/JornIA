@@ -1,0 +1,73 @@
+/** Rótulos de domínio (status do post, papel do usuário, tipo de crédito) usados em várias telas. */
+export const common = {
+  pt: {
+    cancel: "Cancelar",
+    save: "Salvar",
+    saving: "Salvando…",
+    remove: "Remover",
+    close: "Fechar",
+    language: {
+      label: "Idioma",
+      pt: "Português",
+      en: "English",
+    },
+    status: {
+      processing_ai: "Processando IA",
+      editing_art: "Edição de arte",
+      in_review: "Em revisão",
+      approved: "Aprovado",
+      publishing: "Publicando",
+      published: "Publicado",
+      rejected: "Recusado",
+      failed: "Falhou",
+    },
+    role: {
+      admin: "Administrador",
+      manager: "Editor/Gerente",
+      staff: "Jornalista",
+    },
+    credit: {
+      photo: "Fotografia feita por",
+      source: "Fonte da notícia",
+      video: "Vídeo feito por",
+      report: "Apuração / reportagem de",
+      partner: "Parceria / colaboração",
+      mention: "Apenas marcar o perfil",
+    },
+  },
+  en: {
+    cancel: "Cancel",
+    save: "Save",
+    saving: "Saving…",
+    remove: "Remove",
+    close: "Close",
+    language: {
+      label: "Language",
+      pt: "Português",
+      en: "English",
+    },
+    status: {
+      processing_ai: "Processing AI",
+      editing_art: "Editing art",
+      in_review: "In review",
+      approved: "Approved",
+      publishing: "Publishing",
+      published: "Published",
+      rejected: "Rejected",
+      failed: "Failed",
+    },
+    role: {
+      admin: "Admin",
+      manager: "Editor/Manager",
+      staff: "Journalist",
+    },
+    credit: {
+      photo: "Photo by",
+      source: "News source",
+      video: "Video by",
+      report: "Reporting by",
+      partner: "Partnership / collaboration",
+      mention: "Just tag the profile",
+    },
+  },
+};

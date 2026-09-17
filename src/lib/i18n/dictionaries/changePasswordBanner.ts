@@ -1,0 +1,26 @@
+export const changePasswordBanner = {
+  pt: {
+    banner: "🔑 Você ainda está com a senha temporária. Que tal cadastrar uma senha sua?",
+    setNewPassword: "Cadastrar senha nova",
+    notNow: "Agora não",
+    formTitle: "Cadastrar senha nova",
+    newPasswordLabel: "Nova senha",
+    confirmPasswordLabel: "Confirmar senha",
+    passwordsDontMatch: "As senhas não coincidem.",
+    save: "Salvar senha",
+    saving: "Salvando…",
+    cancel: "Cancelar",
+  },
+  en: {
+    banner: "🔑 You're still using the temporary password. How about setting your own?",
+    setNewPassword: "Set a new password",
+    notNow: "Not now",
+    formTitle: "Set a new password",
+    newPasswordLabel: "New password",
+    confirmPasswordLabel: "Confirm password",
+    passwordsDontMatch: "Passwords don't match.",
+    save: "Save password",
+    saving: "Saving…",
+    cancel: "Cancel",
+  },
+};

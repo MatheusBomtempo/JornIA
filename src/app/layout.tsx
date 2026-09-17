@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, Poppins } from "next/font/google";
+import { getServerDictionary } from "@/lib/i18n/server";
+import { LocaleProvider } from "@/components/LocaleProvider";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
@@ -12,11 +14,13 @@ const poppins = Poppins({
   variable: "--font-art",
 });
 
-export const metadata: Metadata = {
-  title: "JornAI — publicação rápida no Instagram com IA",
-  description:
-    "Da fonte ao feed em minutos: IA redige o texto, o jornalista ajusta a arte e o editor aprova antes de publicar no Instagram.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const { dict } = await getServerDictionary();
+  return {
+    title: dict.rootMetadata.title,
+    description: dict.rootMetadata.description,
+  };
+}
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -25,14 +29,20 @@ export const viewport: Viewport = {
   themeColor: "#0a0c10",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const { locale } = await getServerDictionary();
   return (
-    <html lang="pt-BR" className={`dark ${inter.variable} ${poppins.variable}`}>
-      <body className="font-sans antialiased">{children}</body>
+    <html
+      lang={locale === "pt" ? "pt-BR" : "en"}
+      className={`dark ${inter.variable} ${poppins.variable}`}
+    >
+      <body className="font-sans antialiased">
+        <LocaleProvider initialLocale={locale}>{children}</LocaleProvider>
+      </body>
     </html>
   );
 }

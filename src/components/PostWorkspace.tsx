@@ -8,6 +8,7 @@ import { InstagramPreview } from "./InstagramPreview";
 import { StatusBadge } from "./StatusBadge";
 import { Stepper } from "./Stepper";
 import { BusyLabel, useElapsedSeconds } from "./Spinner";
+import { useLocale } from "./LocaleProvider";
 import {
   POST_STATUS,
   PEER_APPROVALS_NEEDED,
@@ -71,12 +72,14 @@ interface Props {
 
 const STEP_ORDER = ["text", "image", "review"] as const;
 type Step = (typeof STEP_ORDER)[number];
-const STEP_LABELS = ["Texto", "Imagem", "Revisão"];
 
 type Panel = null | "rewrite" | "reject" | "text";
 
 export function PostWorkspace({ user, post, templates }: Props) {
   const router = useRouter();
+  const { dict, locale } = useLocale();
+  const dateLocale = locale === "pt" ? "pt-BR" : "en-US";
+  const STEP_LABELS = [dict.postWorkspace.steps.text, dict.postWorkspace.steps.image, dict.postWorkspace.steps.review];
   const current = post.versions[0];
 
   // Quem pode editar texto/foto (o autor, ou manager/admin) vs. quem pode
@@ -132,11 +135,13 @@ export function PostWorkspace({ user, post, templates }: Props) {
     async (file: File | undefined | null) => {
       if (!file) return;
       if (!file.type.startsWith("image/")) {
-        setPhotoError("Aqui só entra imagem (JPEG, PNG ou WebP).");
+        setPhotoError(dict.postWorkspace.errors.invalidFileType);
         return;
       }
       if (file.size > MAX_PHOTO_MB * 1024 * 1024) {
-        setPhotoError(`A imagem passa de ${MAX_PHOTO_MB} MB.`);
+        setPhotoError(
+          `${dict.postWorkspace.errors.fileTooLargePrefix} ${MAX_PHOTO_MB} ${dict.postWorkspace.errors.fileTooLargeSuffix}`,
+        );
         return;
       }
       setPhotoError(null);
@@ -157,7 +162,7 @@ export function PostWorkspace({ user, post, templates }: Props) {
         setPhotoBusy(false);
       }
     },
-    [post.id, router],
+    [post.id, router, dict],
   );
 
   async function run(label: string, fn: () => Promise<unknown>) {
@@ -176,24 +181,25 @@ export function PostWorkspace({ user, post, templates }: Props) {
   }
 
   const approve = () =>
-    run(isPeerReviewer ? "Registrando aprovação…" : "Publicando…", () =>
-      apiPost(`/api/posts/${post.id}/versions/${current.id}/approve`),
+    run(
+      isPeerReviewer ? dict.postWorkspace.busy.registeringApproval : dict.postWorkspace.busy.publishing,
+      () => apiPost(`/api/posts/${post.id}/versions/${current.id}/approve`),
     );
 
   const reject = () =>
-    run("Recusando…", () =>
+    run(dict.postWorkspace.busy.rejecting, () =>
       apiPost(`/api/posts/${post.id}/versions/${current.id}/reject`, { reason }),
     );
 
   const rewrite = () =>
-    run("Reescrevendo com IA…", () =>
+    run(dict.postWorkspace.busy.rewriting, () =>
       apiPost(`/api/posts/${post.id}/regenerate`, {
         guidance: guidance.trim() || undefined,
       }),
     );
 
   const saveText = () =>
-    run("Salvando texto…", () =>
+    run(dict.postWorkspace.busy.savingText, () =>
       apiPatch(`/api/posts/${post.id}/versions/${current.id}`, draft),
     );
 
@@ -209,7 +215,8 @@ export function PostWorkspace({ user, post, templates }: Props) {
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <StatusBadge status={post.status} />
         <span className="text-xs text-muted">
-          por {post.author.name} · versão {current?.versionNumber}
+          {dict.postWorkspace.header.byLabel} {post.author.name} · {dict.postWorkspace.header.versionLabel}{" "}
+          {current?.versionNumber}
         </span>
       </div>
 
@@ -223,7 +230,7 @@ export function PostWorkspace({ user, post, templates }: Props) {
               disabled={stepIndex === 0}
               onClick={() => goToStep(stepIndex - 1)}
             >
-              ← Voltar
+              {dict.postWorkspace.back}
             </button>
             <button
               type="button"
@@ -231,7 +238,7 @@ export function PostWorkspace({ user, post, templates }: Props) {
               disabled={stepIndex === STEP_ORDER.length - 1}
               onClick={() => goToStep(stepIndex + 1)}
             >
-              Avançar →
+              {dict.postWorkspace.forward}
             </button>
           </div>
         </div>
@@ -244,53 +251,57 @@ export function PostWorkspace({ user, post, templates }: Props) {
         <section className="card space-y-4 p-4 sm:p-5">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <h2 className="text-sm font-semibold">Texto do post</h2>
+              <h2 className="text-sm font-semibold">{dict.postWorkspace.text.heading}</h2>
               {current?.aiProvider && (
                 <span
                   className="badge bg-brand-500/10 text-brand-300"
-                  title={current.aiModel ? `Modelo: ${current.aiModel}` : undefined}
+                  title={
+                    current.aiModel
+                      ? `${dict.postWorkspace.text.modelPrefix} ${current.aiModel}`
+                      : undefined
+                  }
                 >
-                  ✨ {aiSourceLabel(current.aiProvider)}
+                  ✨ {aiSourceLabel(current.aiProvider, dict.postWorkspace.aiSource)}
                 </span>
               )}
             </div>
             {canEdit && !isFinished && panel !== "text" && (
               <button className="btn-ghost btn-sm" onClick={() => setPanel("text")}>
-                Editar
+                {dict.postWorkspace.text.editButton}
               </button>
             )}
           </div>
 
           {panel === "text" ? (
             <div className="space-y-3">
-              <Field label="Título na imagem" value={draft.title} max={69}
+              <Field label={dict.postWorkspace.text.titleLabel} value={draft.title} max={69}
                 onChange={(v) => setDraft({ ...draft, title: v })} />
-              <Field label="Subtítulo na imagem" textarea max={149} value={draft.subtitle}
+              <Field label={dict.postWorkspace.text.subtitleLabel} textarea max={149} value={draft.subtitle}
                 onChange={(v) => setDraft({ ...draft, subtitle: v })} />
-              <Field label="Legenda do Instagram" textarea rows={10}
+              <Field label={dict.postWorkspace.text.captionLabel} textarea rows={10}
                 value={draft.instagramCaption}
                 onChange={(v) => setDraft({ ...draft, instagramCaption: v })} />
               <div className="flex flex-wrap gap-2">
                 <button className="btn-primary" onClick={saveText} disabled={!!busy}>
-                  {busy ? <BusyLabel label={busy} seconds={elapsed} /> : "Salvar texto"}
+                  {busy ? <BusyLabel label={busy} seconds={elapsed} /> : dict.postWorkspace.text.saveButton}
                 </button>
                 <button className="btn-subtle" onClick={() => setPanel(null)}>
-                  Cancelar
+                  {dict.common.cancel}
                 </button>
               </div>
             </div>
           ) : (
             <dl className="space-y-3">
-              <Read label="Título na imagem" value={current?.title} art />
-              <Read label="Subtítulo na imagem" value={current?.subtitle} art />
-              <Read label="Legenda do Instagram" value={current?.instagramCaption} />
+              <Read label={dict.postWorkspace.text.titleLabel} value={current?.title} art />
+              <Read label={dict.postWorkspace.text.subtitleLabel} value={current?.subtitle} art />
+              <Read label={dict.postWorkspace.text.captionLabel} value={current?.instagramCaption} />
             </dl>
           )}
 
           {post.credits.length > 0 && (
             <div className="border-t border-lineSoft pt-3">
               <dt className="text-[11px] font-semibold uppercase tracking-wider text-faint">
-                Créditos e marcações
+                {dict.postWorkspace.text.creditsHeading}
               </dt>
               <ul className="mt-1 space-y-0.5 text-sm text-ink">
                 {post.credits.map((c, i) => (
@@ -305,9 +316,9 @@ export function PostWorkspace({ user, post, templates }: Props) {
       {/* ───────────── PASSO 2: IMAGEM ───────────── */}
       {step === "image" && (
         <section className="card p-4 sm:p-5">
-          <h2 className="mb-1 text-sm font-semibold">Imagem do post</h2>
+          <h2 className="mb-1 text-sm font-semibold">{dict.postWorkspace.image.heading}</h2>
           <p className="hint mb-4 mt-0">
-            Enquadre a foto e revise a frase que vai sobre a imagem.
+            {dict.postWorkspace.image.hint}
           </p>
 
           {!canEdit ? (
@@ -317,14 +328,14 @@ export function PostWorkspace({ user, post, templates }: Props) {
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={current.renderedArtUrl}
-                  alt="Arte atual"
+                  alt={dict.postWorkspace.image.artAlt}
                   className="mx-auto max-w-[420px] rounded-xl border border-line"
                 />
               ) : (
                 <EmptyNote>
                   {hasPhotos
-                    ? "A foto já foi enviada, mas a arte ainda não foi finalizada pelo autor."
-                    : "Este post ainda não tem foto."}
+                    ? dict.postWorkspace.image.photoUploadedNoArt
+                    : dict.postWorkspace.image.noPhotoReadOnly}
                 </EmptyNote>
               )}
               <ImageSuggestions suggestions={current?.imageSuggestions ?? []} />
@@ -332,8 +343,7 @@ export function PostWorkspace({ user, post, templates }: Props) {
           ) : !hasPhotos ? (
             <div className="space-y-4">
               <EmptyNote>
-                Este post ainda não tem foto — envie a sua, ou use as sugestões
-                de busca abaixo pra achar uma e depois enviá-la aqui.
+                {dict.postWorkspace.image.noPhotoEditable}
               </EmptyNote>
               <PhotoUploader
                 dragging={photoDragging}
@@ -348,14 +358,14 @@ export function PostWorkspace({ user, post, templates }: Props) {
             </div>
           ) : !hasTemplates ? (
             <EmptyNote>
-              Nenhum template cadastrado ainda. Um administrador precisa criar o
-              template da marca em <strong className="text-ink">Admin → Templates</strong>.
+              {dict.postWorkspace.image.noTemplatePrefix}{" "}
+              <strong className="text-ink">{dict.postWorkspace.image.noTemplateAdminPath}</strong>.
             </EmptyNote>
           ) : (
             <div className="space-y-4">
               <details className="group card-soft p-3">
                 <summary className="btn-ghost w-full cursor-pointer list-none">
-                  📷 Adicionar ou trocar a foto
+                  {dict.postWorkspace.image.addOrChangePhoto}
                 </summary>
                 <div className="mt-3 space-y-3">
                   <PhotoUploader
@@ -411,7 +421,7 @@ export function PostWorkspace({ user, post, templates }: Props) {
         <div className="grid gap-5 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
           {/* Prévia */}
           <section className="card p-4">
-            <h2 className="mb-3 text-sm font-semibold">Como vai ficar no feed</h2>
+            <h2 className="mb-3 text-sm font-semibold">{dict.postWorkspace.review.previewHeading}</h2>
             <InstagramPreview
               artUrl={current?.renderedArtUrl}
               caption={current?.instagramCaption}
@@ -423,7 +433,7 @@ export function PostWorkspace({ user, post, templates }: Props) {
             {/* Decisão — uma ação primária clara por papel, o resto fica discreto. */}
             {!isFinished && (
               <section className="card p-4">
-                <h2 className="mb-3 text-sm font-semibold">Decisão</h2>
+                <h2 className="mb-3 text-sm font-semibold">{dict.postWorkspace.review.decisionHeading}</h2>
 
                 {isManagerOrAdmin && (
                   <button
@@ -431,16 +441,17 @@ export function PostWorkspace({ user, post, templates }: Props) {
                     onClick={approve}
                     disabled={!!busy || !current?.renderedArtUrl}
                   >
-                    {busy ? <BusyLabel label={busy} seconds={elapsed} /> : "✅ Aprovar e publicar"}
+                    {busy ? <BusyLabel label={busy} seconds={elapsed} /> : dict.postWorkspace.review.approveAndPublish}
                   </button>
                 )}
 
                 {isPeerReviewer && (
                   <>
                     <p className="hint mb-2 mt-0">
-                      {approvals.length}/{PEER_APPROVALS_NEEDED} jornalistas já aprovaram
-                      esta versão — publica sozinho com {PEER_APPROVALS_NEEDED}, ou na hora
-                      com 1 aprovação de editor/gerente.
+                      {approvals.length}/{PEER_APPROVALS_NEEDED}{" "}
+                      {dict.postWorkspace.review.peerApprovedMiddle}{" "}
+                      {PEER_APPROVALS_NEEDED}
+                      {dict.postWorkspace.review.peerApprovedEnd}
                     </p>
                     <button
                       className="btn-success w-full"
@@ -450,9 +461,9 @@ export function PostWorkspace({ user, post, templates }: Props) {
                       {busy ? (
                         <BusyLabel label={busy} seconds={elapsed} />
                       ) : myApproval ? (
-                        "✓ Você já aprovou"
+                        dict.postWorkspace.review.alreadyApproved
                       ) : (
-                        "🙋 Aprovar esta pauta"
+                        dict.postWorkspace.review.approveThisStory
                       )}
                     </button>
                   </>
@@ -460,15 +471,23 @@ export function PostWorkspace({ user, post, templates }: Props) {
 
                 {isAuthor && !isManagerOrAdmin && (
                   <p className="alert-info">
-                    {approvals.length > 0
-                      ? `Aguardando aprovação — ${approvals.length}/${PEER_APPROVALS_NEEDED} jornalistas já aprovaram.`
-                      : `Aguardando aprovação de ${PEER_APPROVALS_NEEDED} outros jornalistas, ou de um editor/gerente.`}
+                    {approvals.length > 0 ? (
+                      <>
+                        {dict.postWorkspace.review.waitingWithCountPrefix} {approvals.length}/
+                        {PEER_APPROVALS_NEEDED} {dict.postWorkspace.review.waitingWithCountSuffix}
+                      </>
+                    ) : (
+                      <>
+                        {dict.postWorkspace.review.waitingNoCountPrefix} {PEER_APPROVALS_NEEDED}{" "}
+                        {dict.postWorkspace.review.waitingNoCountSuffix}
+                      </>
+                    )}
                   </p>
                 )}
 
                 {!current?.renderedArtUrl && (
                   <p className="hint">
-                    A arte ainda não foi gerada — finalize o passo 2 (Imagem) antes.
+                    {dict.postWorkspace.review.artNotReady}
                   </p>
                 )}
 
@@ -476,16 +495,16 @@ export function PostWorkspace({ user, post, templates }: Props) {
                   <div className="mt-3 grid gap-2 sm:grid-cols-2">
                     {(canEdit || isPeerReviewer) && (
                       <Decision
-                        icon="🔄" title="Pedir reescrita"
-                        desc="A IA gera uma nova versão do texto"
+                        icon="🔄" title={dict.postWorkspace.review.rewriteTitle}
+                        desc={dict.postWorkspace.review.rewriteDesc}
                         disabled={!!busy}
                         onClick={() => setPanel(panel === "rewrite" ? null : "rewrite")}
                       />
                     )}
                     {canDecide && (
                       <Decision
-                        icon="🚫" title="Recusar"
-                        desc="Arquiva com um motivo"
+                        icon="🚫" title={dict.postWorkspace.review.rejectTitle}
+                        desc={dict.postWorkspace.review.rejectDesc}
                         tone="danger"
                         disabled={!!busy}
                         onClick={() => setPanel(panel === "reject" ? null : "reject")}
@@ -497,19 +516,19 @@ export function PostWorkspace({ user, post, templates }: Props) {
                 {panel === "rewrite" && (
                   <div className="mt-3 space-y-2 rounded-xl border border-line bg-elevated p-3 animate-fade-in">
                     <label className="label" htmlFor="guidance">
-                      Quer orientar a IA? (opcional)
+                      {dict.postWorkspace.review.guidanceLabel}
                     </label>
                     <input
                       id="guidance" className="input" value={guidance}
                       onChange={(e) => setGuidance(e.target.value)}
-                      placeholder="Ex.: mais curto, tom mais sóbrio, foco no impacto"
+                      placeholder={dict.postWorkspace.review.guidancePlaceholder}
                     />
                     <button className="btn-primary w-full" onClick={rewrite} disabled={!!busy}>
-                      {busy ? <BusyLabel label={busy} seconds={elapsed} /> : "Reescrever com IA"}
+                      {busy ? <BusyLabel label={busy} seconds={elapsed} /> : dict.postWorkspace.review.rewriteButton}
                     </button>
                     {busy && elapsed >= 8 && (
                       <p className="text-center text-xs text-muted">
-                        A IA gratuita às vezes demora — ainda estamos tentando.
+                        {dict.postWorkspace.review.aiSlowNotice}
                       </p>
                     )}
                   </div>
@@ -517,17 +536,17 @@ export function PostWorkspace({ user, post, templates }: Props) {
 
                 {panel === "reject" && (
                   <div className="mt-3 space-y-2 rounded-xl border border-red-500/25 bg-red-500/5 p-3 animate-fade-in">
-                    <label className="label" htmlFor="reason">Motivo da recusa</label>
+                    <label className="label" htmlFor="reason">{dict.postWorkspace.review.reasonLabel}</label>
                     <input
                       id="reason" className="input" value={reason}
                       onChange={(e) => setReason(e.target.value)}
-                      placeholder="Obrigatório — fica no histórico"
+                      placeholder={dict.postWorkspace.review.reasonPlaceholder}
                     />
                     <button
                       className="btn-danger w-full" onClick={reject}
                       disabled={!!busy || reason.trim().length < 3}
                     >
-                      {busy ? <BusyLabel label={busy} seconds={elapsed} /> : "Confirmar recusa"}
+                      {busy ? <BusyLabel label={busy} seconds={elapsed} /> : dict.postWorkspace.review.confirmRejectButton}
                     </button>
                   </div>
                 )}
@@ -538,8 +557,8 @@ export function PostWorkspace({ user, post, templates }: Props) {
               <section className="card p-4">
                 <p className="text-sm">
                   {post.status === POST_STATUS.PUBLISHED
-                    ? "🎉 Post publicado no Instagram."
-                    : "Post recusado e arquivado."}
+                    ? dict.postWorkspace.review.publishedMessage
+                    : dict.postWorkspace.review.rejectedMessage}
                 </p>
               </section>
             )}
@@ -547,26 +566,27 @@ export function PostWorkspace({ user, post, templates }: Props) {
             {/* Histórico */}
             <section className="card p-4">
               <h2 className="mb-3 text-sm font-semibold">
-                Histórico ({post.versions.length})
+                {dict.postWorkspace.history.heading} ({post.versions.length})
               </h2>
               <ol className="space-y-2.5">
                 {post.versions.map((v) => (
                   <li key={v.id} className="flex items-start justify-between gap-3 text-sm">
                     <div className="min-w-0">
                       <span className="font-medium">v{v.versionNumber}</span>{" "}
-                      <span className="text-muted">· {originLabel(v.origin)}</span>
+                      <span className="text-muted">· {originLabel(v.origin, dict.postWorkspace.origin)}</span>
                       {v.aiProvider && (
-                        <span className="text-muted"> · {aiSourceLabel(v.aiProvider)}</span>
+                        <span className="text-muted"> · {aiSourceLabel(v.aiProvider, dict.postWorkspace.aiSource)}</span>
                       )}
                       {v.decisions.map((d) => (
                         <div key={d.id} className="text-xs text-muted">
-                          {decisionLabel(d.decision)} por {d.reviewer.name}
+                          {decisionLabel(d.decision, dict.postWorkspace.decision)} {dict.postWorkspace.header.byLabel}{" "}
+                          {d.reviewer.name}
                           {d.reason ? ` — “${d.reason}”` : ""}
                         </div>
                       ))}
                     </div>
                     <span className="shrink-0 text-xs text-faint">
-                      {new Date(v.createdAt).toLocaleString("pt-BR", {
+                      {new Date(v.createdAt).toLocaleString(dateLocale, {
                         day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
                       })}
                     </span>
@@ -632,6 +652,7 @@ function PhotoUploader({
   onDrop: (file: File | undefined) => void;
   onPick: () => void;
 }) {
+  const { dict } = useLocale();
   return (
     <div
       onDragOver={(e) => { e.preventDefault(); onDragOver(); }}
@@ -648,9 +669,11 @@ function PhotoUploader({
                   }`}
     >
       <p className="text-sm font-medium">
-        {busy ? "Enviando…" : "Arraste a foto ou toque para escolher"}
+        {busy ? dict.postWorkspace.photoUploader.sending : dict.postWorkspace.photoUploader.dragOrTap}
       </p>
-      <p className="text-xs text-muted">JPEG, PNG ou WebP · até {MAX_PHOTO_MB} MB</p>
+      <p className="text-xs text-muted">
+        {dict.postWorkspace.photoUploader.formatsPrefix} {MAX_PHOTO_MB} {dict.postWorkspace.photoUploader.mbSuffix}
+      </p>
     </div>
   );
 }
@@ -662,11 +685,12 @@ function PhotoUploader({
  * baixada e enviada de volta pelo uploader acima.
  */
 function ImageSuggestions({ suggestions }: { suggestions: string[] }) {
+  const { dict } = useLocale();
   if (!suggestions.length) return null;
   return (
     <div className="space-y-2">
       <p className="text-xs font-medium text-muted">
-        💡 Sugestões de busca de imagem (a IA só sugere — quem escolhe é você)
+        {dict.postWorkspace.imageSuggestions.heading}
       </p>
       <div className="grid gap-2 sm:grid-cols-2">
         {suggestions.slice(0, 2).map((q) => (
@@ -681,7 +705,7 @@ function ImageSuggestions({ suggestions }: { suggestions: string[] }) {
                 rel="noopener noreferrer"
                 className="btn-ghost btn-sm"
               >
-                🔎 Google Imagens
+                {dict.postWorkspace.imageSuggestions.googleImages}
               </a>
               <a
                 href={freePhotosUrl(q)}
@@ -689,7 +713,7 @@ function ImageSuggestions({ suggestions }: { suggestions: string[] }) {
                 rel="noopener noreferrer"
                 className="btn-ghost btn-sm"
               >
-                🖼️ Fotos gratuitas
+                {dict.postWorkspace.imageSuggestions.freePhotos}
               </a>
             </div>
           </div>
@@ -755,32 +779,15 @@ function Read({
  * Nome amigável do provedor que gerou o texto. Provedores dentro da corrente
  * de fallback (chain) chegam como "openrouter:modelo" — extrai só o nome.
  */
-function aiSourceLabel(provider: string): string {
+function aiSourceLabel(provider: string, names: Record<string, string>): string {
   const base = provider.split(":")[0];
-  const names: Record<string, string> = {
-    groq: "Groq",
-    openrouter: "OpenRouter",
-    nvidia: "NVIDIA",
-    gemini: "Gemini",
-    anthropic: "Claude",
-    openai: "OpenAI",
-    mock: "modo dev (sem IA)",
-  };
   return names[base] ?? base;
 }
 
-function originLabel(origin: string): string {
-  return (
-    { ai_generated: "gerado por IA", ai_regenerated: "reescrito por IA", manual_edit: "edição manual" }[
-      origin
-    ] ?? origin
-  );
+function originLabel(origin: string, origins: Record<string, string>): string {
+  return origins[origin] ?? origin;
 }
 
-function decisionLabel(decision: string): string {
-  return (
-    { approved: "aprovado", rejected: "recusado", regenerate: "pedido de reescrita", manual_edit: "editado" }[
-      decision
-    ] ?? decision
-  );
+function decisionLabel(decision: string, decisions: Record<string, string>): string {
+  return decisions[decision] ?? decision;
 }

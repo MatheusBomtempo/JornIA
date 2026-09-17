@@ -3,29 +3,32 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { apiPost } from "@/lib/api-client";
-import { ROLE_LABELS, type UserRole } from "@/lib/domain";
+import { type UserRole } from "@/lib/domain";
 import { ChangePasswordBanner } from "./ChangePasswordBanner";
+import { useLocale } from "./LocaleProvider";
+import { LanguageSwitcher } from "./LanguageSwitcher";
 
 interface Props {
   user: { name: string; role: UserRole; mustSetPassword?: boolean };
   children: React.ReactNode;
 }
 
-const NAV = [
-  { href: "/dashboard", label: "Feed", icon: FeedIcon },
-  { href: "/capture", label: "Nova pauta", icon: PlusIcon },
-  {
-    href: "/admin",
-    label: "Admin",
-    icon: GearIcon,
-    // Staff também entra (estilo/templates) — AdminPanel restringe o resto por role.
-    roles: ["admin", "manager", "staff"] as UserRole[],
-  },
-];
-
 export function AppShell({ user, children }: Props) {
   const pathname = usePathname();
   const router = useRouter();
+  const { dict } = useLocale();
+
+  const NAV = [
+    { href: "/dashboard", label: dict.appShell.navFeed, icon: FeedIcon },
+    { href: "/capture", label: dict.appShell.navNewStory, icon: PlusIcon },
+    {
+      href: "/admin",
+      label: dict.appShell.navAdmin,
+      icon: GearIcon,
+      // Staff também entra (estilo/templates) — AdminPanel restringe o resto por role.
+      roles: ["admin", "manager", "staff"] as UserRole[],
+    },
+  ];
   const items = NAV.filter((i) => !i.roles || i.roles.includes(user.role));
 
   async function logout() {
@@ -64,12 +67,13 @@ export function AppShell({ user, children }: Props) {
           </nav>
 
           <div className="ml-auto flex items-center gap-3">
+            <LanguageSwitcher />
             <div className="hidden text-right leading-tight sm:block">
               <div className="text-sm font-medium">{user.name}</div>
-              <div className="text-xs text-muted">{ROLE_LABELS[user.role]}</div>
+              <div className="text-xs text-muted">{dict.common.role[user.role]}</div>
             </div>
             <button onClick={logout} className="btn-ghost btn-sm">
-              Sair
+              {dict.appShell.logout}
             </button>
           </div>
         </div>

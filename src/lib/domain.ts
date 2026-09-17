@@ -35,12 +35,12 @@ export type SourceType = (typeof SOURCE_TYPES)[number];
  * no padrão da redação: "📸 @fotografo".
  */
 export const CREDIT_TYPES = [
-  { id: "photo", emoji: "📸", label: "Fotografia feita por" },
-  { id: "source", emoji: "🗣️", label: "Fonte da notícia" },
-  { id: "video", emoji: "🎥", label: "Vídeo feito por" },
-  { id: "report", emoji: "✍️", label: "Apuração / reportagem de" },
-  { id: "partner", emoji: "🤝", label: "Parceria / colaboração" },
-  { id: "mention", emoji: "@", label: "Apenas marcar o perfil" },
+  { id: "photo", emoji: "📸" },
+  { id: "source", emoji: "🗣️" },
+  { id: "video", emoji: "🎥" },
+  { id: "report", emoji: "✍️" },
+  { id: "partner", emoji: "🤝" },
+  { id: "mention", emoji: "@" },
 ] as const;
 
 export type CreditTypeId = (typeof CREDIT_TYPES)[number]["id"];
@@ -52,10 +52,6 @@ export interface Credit {
 
 export function creditEmoji(type: CreditTypeId): string {
   return CREDIT_TYPES.find((c) => c.id === type)?.emoji ?? "@";
-}
-
-export function creditLabel(type: CreditTypeId): string {
-  return CREDIT_TYPES.find((c) => c.id === type)?.label ?? type;
 }
 
 /** Normaliza o @ digitado pelo usuário (aceita com ou sem arroba). */
@@ -131,21 +127,3 @@ export const ALLOWED_TRANSITIONS: Record<PostStatus, PostStatus[]> = {
 export function canTransition(from: PostStatus, to: PostStatus): boolean {
   return ALLOWED_TRANSITIONS[from]?.includes(to) ?? false;
 }
-
-/** Rótulos em pt-BR para exibição na UI. */
-export const STATUS_LABELS: Record<PostStatus, string> = {
-  processing_ai: "Processando IA",
-  editing_art: "Edição de arte",
-  in_review: "Em revisão",
-  approved: "Aprovado",
-  publishing: "Publicando",
-  published: "Publicado",
-  rejected: "Recusado",
-  failed: "Falhou",
-};
-
-export const ROLE_LABELS: Record<UserRole, string> = {
-  admin: "Administrador",
-  manager: "Editor/Gerente",
-  staff: "Jornalista",
-};

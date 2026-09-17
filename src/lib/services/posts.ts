@@ -7,6 +7,7 @@ import { renderAndStore } from "../render";
 import { publishToInstagram } from "../instagram";
 import { canEditPost, canReviewPost, can } from "../rbac";
 import { purgePostsWithMedia } from "./retention";
+import { getAppSettings } from "./settings";
 import { ApiError, badRequest, conflict, forbidden, notFound } from "../http";
 import { POST_STATUS, PUBLICATION_STATUS, PEER_APPROVALS_NEEDED, type Credit } from "../domain";
 import type { z } from "zod";
@@ -181,7 +182,7 @@ export async function saveArtAndRender(
     `art/${postId}/v${version.versionNumber}-${Date.now()}.png`,
   );
 
-  await prisma.postVersion.update({
+  const updatedVersion = await prisma.postVersion.update({
     where: { id: version.id },
     data: {
       selectedPhotoId: photo.id,
@@ -196,10 +197,17 @@ export async function saveArtAndRender(
     },
   });
 
-  await prisma.post.update({
-    where: { id: postId },
-    data: { status: POST_STATUS.IN_REVIEW },
-  });
+  // Com o fluxo de revisão desligado no admin, a arte pronta já publica
+  // direto — ninguém precisa aprovar. Ligado (padrão), segue pro "em revisão".
+  const settings = await getAppSettings();
+  if (settings.reviewRequired) {
+    await prisma.post.update({
+      where: { id: postId },
+      data: { status: POST_STATUS.IN_REVIEW },
+    });
+  } else {
+    await publishVersion(postId, updatedVersion);
+  }
 
   return getPostDetail(postId);
 }
@@ -354,6 +362,7 @@ export async function editVersionManually(
     },
   });
 
+  let finalRenderedArtUrl = version.renderedArtUrl;
   if (artChanged && version.artTemplateId && version.selectedPhotoId) {
     const [photo, template] = await Promise.all([
       prisma.postPhoto.findUnique({ where: { id: version.selectedPhotoId } }),
@@ -381,6 +390,7 @@ export async function editVersionManually(
         where: { id: version.id },
         data: { renderedArtUrl: url },
       });
+      finalRenderedArtUrl = url;
     }
   }
 
@@ -394,12 +404,72 @@ export async function editVersionManually(
     });
   }
 
-  await prisma.post.update({
-    where: { id: postId },
-    data: { status: POST_STATUS.IN_REVIEW },
-  });
+  // Mesma regra do salvamento de arte: com revisão desligada e a arte já
+  // pronta, publica direto em vez de esperar em "em revisão".
+  const settings = await getAppSettings();
+  if (settings.reviewRequired || !finalRenderedArtUrl) {
+    await prisma.post.update({
+      where: { id: postId },
+      data: { status: POST_STATUS.IN_REVIEW },
+    });
+  } else {
+    await publishVersion(postId, { ...version, renderedArtUrl: finalRenderedArtUrl });
+  }
 
   return { post: await getPostDetail(postId), versionId: version.id };
+}
+
+/**
+ * Publica de fato no Instagram e reflete o resultado no post — usado tanto
+ * pela aprovação manual (approveAndPublish) quanto pelo auto-publish quando
+ * o fluxo de revisão está desligado (ver AppSettings.reviewRequired).
+ */
+async function publishVersion(postId: string, version: PostVersion) {
+  if (!version.renderedArtUrl) {
+    throw badRequest("A arte ainda não foi renderizada para esta versão.");
+  }
+
+  await prisma.post.update({
+    where: { id: postId },
+    data: { status: POST_STATUS.PUBLISHING },
+  });
+
+  const publication = await prisma.publication.create({
+    data: { postVersionId: version.id, status: PUBLICATION_STATUS.PENDING },
+  });
+
+  try {
+    const result = await publishToInstagram(
+      version.renderedArtUrl,
+      version.instagramCaption ?? version.title ?? "",
+    );
+    await prisma.publication.update({
+      where: { id: publication.id },
+      data: {
+        status: PUBLICATION_STATUS.PUBLISHED,
+        instagramMediaId: result.mediaId,
+        instagramPostUrl: result.permalink ?? null,
+        publishedAt: new Date(),
+      },
+    });
+    await prisma.post.update({
+      where: { id: postId },
+      data: { status: POST_STATUS.PUBLISHED },
+    });
+  } catch (err) {
+    await prisma.publication.update({
+      where: { id: publication.id },
+      data: {
+        status: PUBLICATION_STATUS.FAILED,
+        errorMessage: (err as Error).message,
+      },
+    });
+    await prisma.post.update({
+      where: { id: postId },
+      data: { status: POST_STATUS.FAILED },
+    });
+    throw new ApiError(502, `Falha ao publicar: ${(err as Error).message}`);
+  }
 }
 
 // ── 5) Aprovar → publicar no Instagram ───────────────────────
@@ -450,48 +520,7 @@ export async function approveAndPublish(
     });
   }
 
-  await prisma.post.update({
-    where: { id: postId },
-    data: { status: POST_STATUS.PUBLISHING },
-  });
-
-  const publication = await prisma.publication.create({
-    data: { postVersionId: versionId, status: PUBLICATION_STATUS.PENDING },
-  });
-
-  try {
-    const result = await publishToInstagram(
-      version.renderedArtUrl,
-      version.instagramCaption ?? version.title ?? "",
-    );
-    await prisma.publication.update({
-      where: { id: publication.id },
-      data: {
-        status: PUBLICATION_STATUS.PUBLISHED,
-        instagramMediaId: result.mediaId,
-        instagramPostUrl: result.permalink ?? null,
-        publishedAt: new Date(),
-      },
-    });
-    await prisma.post.update({
-      where: { id: postId },
-      data: { status: POST_STATUS.PUBLISHED },
-    });
-  } catch (err) {
-    await prisma.publication.update({
-      where: { id: publication.id },
-      data: {
-        status: PUBLICATION_STATUS.FAILED,
-        errorMessage: (err as Error).message,
-      },
-    });
-    await prisma.post.update({
-      where: { id: postId },
-      data: { status: POST_STATUS.FAILED },
-    });
-    throw new ApiError(502, `Falha ao publicar: ${(err as Error).message}`);
-  }
-
+  await publishVersion(postId, version);
   return getPostDetail(postId);
 }
 
@@ -573,10 +602,15 @@ export function listPosts(opts: { status?: string; mineFor?: string } = {}) {
         orderBy: { versionNumber: "desc" },
         take: 1,
         select: {
+          id: true,
           title: true,
           subtitle: true,
           renderedArtUrl: true,
           versionNumber: true,
+          decisions: {
+            where: { decision: "approved" },
+            select: { reviewerId: true },
+          },
         },
       },
     },

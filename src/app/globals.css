@@ -68,6 +68,24 @@ body {
     @apply min-h-9 rounded-lg px-3 text-xs;
   }
 
+  /* ── Ações rápidas no card do feed (aprovar/recusar no hover) ── */
+  .quick-action-btn {
+    @apply inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 text-xs font-semibold
+           text-white backdrop-blur-md transition-all duration-200 ease-out
+           hover:scale-105 active:scale-95
+           disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100 disabled:hover:shadow-none;
+  }
+  .quick-action-approve {
+    @apply quick-action-btn bg-emerald-500/25 ring-1 ring-inset ring-emerald-400/50
+           hover:bg-emerald-500/40 hover:ring-emerald-300
+           hover:shadow-[0_0_16px_2px_rgba(16,185,129,0.55)];
+  }
+  .quick-action-reject {
+    @apply quick-action-btn bg-red-500/25 ring-1 ring-inset ring-red-400/50
+           hover:bg-red-500/40 hover:ring-red-300
+           hover:shadow-[0_0_16px_2px_rgba(239,68,68,0.55)];
+  }
+
   /* ── Superfícies ─────────────────────────────────────────── */
   .card {
     @apply rounded-2xl border border-line bg-surface shadow-soft;

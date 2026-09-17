@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiPost } from "@/lib/api-client";
+import { useLocale } from "./LocaleProvider";
 
 /**
  * Sugestão (não bloqueia) pra quem ainda está na senha temporária
@@ -11,6 +12,7 @@ import { apiPost } from "@/lib/api-client";
  */
 export function ChangePasswordBanner() {
   const router = useRouter();
+  const { dict } = useLocale();
   const [dismissed, setDismissed] = useState(false);
   const [open, setOpen] = useState(false);
   const [password, setPassword] = useState("");
@@ -24,7 +26,7 @@ export function ChangePasswordBanner() {
     e.preventDefault();
     setError(null);
     if (password !== confirm) {
-      setError("As senhas não coincidem.");
+      setError(dict.changePasswordBanner.passwordsDontMatch);
       return;
     }
     setLoading(true);
@@ -42,15 +44,13 @@ export function ChangePasswordBanner() {
   if (!open) {
     return (
       <div className="alert-info mb-5 flex flex-wrap items-center justify-between gap-3">
-        <span>
-          🔑 Você ainda está com a senha temporária. Que tal cadastrar uma senha sua?
-        </span>
+        <span>{dict.changePasswordBanner.banner}</span>
         <div className="flex shrink-0 gap-2">
           <button onClick={() => setOpen(true)} className="btn-primary btn-sm">
-            Cadastrar senha nova
+            {dict.changePasswordBanner.setNewPassword}
           </button>
           <button onClick={() => setDismissed(true)} className="btn-ghost btn-sm">
-            Agora não
+            {dict.changePasswordBanner.notNow}
           </button>
         </div>
       </div>
@@ -59,10 +59,10 @@ export function ChangePasswordBanner() {
 
   return (
     <form onSubmit={onSubmit} className="card mb-5 space-y-3 p-4">
-      <p className="text-sm font-medium">Cadastrar senha nova</p>
+      <p className="text-sm font-medium">{dict.changePasswordBanner.formTitle}</p>
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
-          <label className="label" htmlFor="new-password">Nova senha</label>
+          <label className="label" htmlFor="new-password">{dict.changePasswordBanner.newPasswordLabel}</label>
           <input
             id="new-password" type="password" className="input" value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -70,7 +70,7 @@ export function ChangePasswordBanner() {
           />
         </div>
         <div>
-          <label className="label" htmlFor="confirm-password">Confirmar senha</label>
+          <label className="label" htmlFor="confirm-password">{dict.changePasswordBanner.confirmPasswordLabel}</label>
           <input
             id="confirm-password" type="password" className="input" value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
@@ -83,10 +83,10 @@ export function ChangePasswordBanner() {
 
       <div className="flex gap-2">
         <button type="submit" className="btn-primary btn-sm" disabled={loading}>
-          {loading ? "Salvando…" : "Salvar senha"}
+          {loading ? dict.changePasswordBanner.saving : dict.changePasswordBanner.save}
         </button>
         <button type="button" onClick={() => setOpen(false)} className="btn-ghost btn-sm">
-          Cancelar
+          {dict.changePasswordBanner.cancel}
         </button>
       </div>
     </form>

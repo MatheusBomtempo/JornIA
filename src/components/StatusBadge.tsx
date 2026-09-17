@@ -1,4 +1,7 @@
-import { STATUS_LABELS, type PostStatus } from "@/lib/domain";
+"use client";
+
+import { type PostStatus } from "@/lib/domain";
+import { useLocale } from "./LocaleProvider";
 
 const COLORS: Record<string, string> = {
   processing_ai: "bg-amber-500/15 text-amber-300 ring-1 ring-inset ring-amber-500/25",
@@ -12,7 +15,8 @@ const COLORS: Record<string, string> = {
 };
 
 export function StatusBadge({ status }: { status: string }) {
-  const label = STATUS_LABELS[status as PostStatus] ?? status;
+  const { dict } = useLocale();
+  const label = dict.common.status[status as PostStatus] ?? status;
   const color = COLORS[status] ?? "bg-line text-muted";
   return <span className={`badge ${color}`}>{label}</span>;
 }

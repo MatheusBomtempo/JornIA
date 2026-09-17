@@ -1,6 +1,7 @@
 "use client";
 
 import { CREDIT_TYPES, type Credit, type CreditTypeId } from "@/lib/domain";
+import { useLocale } from "./LocaleProvider";
 
 interface Props {
   credits: Credit[];
@@ -15,6 +16,7 @@ const EMPTY = "";
  * surge o "+" para adicionar outro. Tudo opcional.
  */
 export function CreditsInput({ credits, onChange }: Props) {
+  const { dict } = useLocale();
   // Linha em edição: sempre existe uma "vazia" no fim para começar a primeira.
   const rows: (Credit | null)[] = [...credits, null];
 
@@ -60,7 +62,7 @@ export function CreditsInput({ credits, onChange }: Props) {
               // Botão "+" para adicionar outro crédito
               <details className="group">
                 <summary className="btn-ghost w-full cursor-pointer list-none">
-                  + Adicionar outro crédito
+                  {dict.creditsInput.addAnother}
                 </summary>
                 <div className="mt-2">
                   <TypeSelect value={EMPTY} onChange={(v) => setType(i, v)} />
@@ -81,17 +83,17 @@ export function CreditsInput({ credits, onChange }: Props) {
                       className="input flex-1"
                       value={credit.handle}
                       onChange={(e) => setHandle(i, e.target.value)}
-                      placeholder="@perfil_no_instagram"
-                      aria-label="Perfil a marcar"
+                      placeholder={dict.creditsInput.handlePlaceholder}
+                      aria-label={dict.creditsInput.handleAriaLabel}
                       autoFocus
                     />
                     <button
                       type="button"
                       onClick={() => remove(i)}
                       className="btn-danger btn-sm shrink-0"
-                      aria-label="Remover crédito"
+                      aria-label={dict.creditsInput.removeAriaLabel}
                     >
-                      Remover
+                      {dict.creditsInput.remove}
                     </button>
                   </div>
                 )}
@@ -113,17 +115,18 @@ function TypeSelect({
   onChange: (v: string) => void;
   className?: string;
 }) {
+  const { dict } = useLocale();
   return (
     <select
       className={`input ${className}`}
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      aria-label="Tipo de crédito"
+      aria-label={dict.creditsInput.typeAriaLabel}
     >
-      <option value="">Nenhum crédito (opcional)</option>
+      <option value="">{dict.creditsInput.noneOption}</option>
       {CREDIT_TYPES.map((t) => (
         <option key={t.id} value={t.id}>
-          {t.emoji} {t.label}
+          {t.emoji} {dict.common.credit[t.id]}
         </option>
       ))}
     </select>

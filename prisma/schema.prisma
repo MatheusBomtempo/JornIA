@@ -242,3 +242,16 @@ model PostAuditLog {
   @@index([purgedAt])
   @@map("post_audit_log")
 }
+
+/**
+ * Configuração global do app — linha única (id sempre 1). Por ora só guarda
+ * se a revisão por pares/editor é obrigatória antes de publicar; desligada,
+ * o post publica direto assim que a arte é salva, sem passar por "em revisão".
+ */
+model AppSettings {
+  id             Int      @id @default(1)
+  reviewRequired Boolean  @default(true) @map("review_required")
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("app_settings")
+}

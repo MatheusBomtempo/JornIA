@@ -134,6 +134,11 @@ export const updateUserSchema = z.object({
   password: z.string().min(8).optional(),
 });
 
+// ── Configurações do app ─────────────────────────────────────
+export const updateSettingsSchema = z.object({
+  reviewRequired: z.boolean(),
+});
+
 // ── API keys ─────────────────────────────────────────────────
 export const createApiKeySchema = z.object({
   name: z.string().min(1),

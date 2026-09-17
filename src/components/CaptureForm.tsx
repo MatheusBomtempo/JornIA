@@ -7,6 +7,7 @@ import { CreditsInput } from "./CreditsInput";
 import { BusyLabel, useElapsedSeconds } from "./Spinner";
 import type { Credit } from "@/lib/domain";
 import { clearDraft, loadDraft, saveDraft } from "@/lib/idb-draft";
+import { useLocale } from "./LocaleProvider";
 
 const URL_ONLY = /^https?:\/\/\S+$/i;
 const MAX_DOC_MB = 20;
@@ -36,6 +37,7 @@ interface CaptureDraft {
  */
 export function CaptureForm() {
   const router = useRouter();
+  const { dict, locale } = useLocale();
   const [content, setContent] = useState("");
   const [doc, setDoc] = useState<AttachedDoc | null>(null);
   const [extracting, setExtracting] = useState(false);
@@ -101,7 +103,7 @@ export function CaptureForm() {
   const acceptDoc = useCallback(async (f: File | undefined | null) => {
     if (!f) return;
     if (f.size > MAX_DOC_MB * 1024 * 1024) {
-      setError(`O documento passa de ${MAX_DOC_MB} MB.`);
+      setError(dict.captureForm.errors.docTooLarge.replace("{max}", String(MAX_DOC_MB)));
       return;
     }
     setError(null);
@@ -116,7 +118,7 @@ export function CaptureForm() {
     } finally {
       setExtracting(false);
     }
-  }, []);
+  }, [dict]);
 
   /**
    * Drop em qualquer ponto desta tela — não precisa mirar exatamente no
@@ -129,12 +131,12 @@ export function CaptureForm() {
       if (f.type === "application/pdf" || /\.(pdf|txt|md)$/i.test(f.name)) {
         acceptDoc(f);
       } else if (f.type.startsWith("image/")) {
-        setError("A foto entra no próximo passo, depois de gerar o texto.");
+        setError(dict.captureForm.errors.photoWrongStep);
       } else {
-        setError("Arquivo não reconhecido. Envie um PDF, .txt ou .md.");
+        setError(dict.captureForm.errors.unrecognizedFile);
       }
     },
-    [acceptDoc],
+    [acceptDoc, dict],
   );
 
   async function onSubmit(e: React.FormEvent) {
@@ -142,7 +144,7 @@ export function CaptureForm() {
     if (!canSubmit) return;
     setError(null);
     try {
-      setBusy(isLink ? "Lendo o link e gerando o texto…" : "Gerando o texto com IA…");
+      setBusy(isLink ? dict.captureForm.busy.readingLink : dict.captureForm.busy.generatingText);
       const { post } = await apiPost<{ post: { id: string } }>("/api/posts", {
         text: isLink || !trimmed ? undefined : trimmed,
         url: isLink ? trimmed : undefined,
@@ -182,21 +184,21 @@ export function CaptureForm() {
       {formDragging && (
         <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-bg/80 p-6 backdrop-blur-sm">
           <div className="rounded-2xl border-2 border-dashed border-brand-500 bg-surface px-8 py-10 text-center shadow-glow">
-            <p className="text-lg font-semibold text-ink">Solte o PDF aqui</p>
-            <p className="mt-1 text-sm text-muted">A foto entra no próximo passo</p>
+            <p className="text-lg font-semibold text-ink">{dict.captureForm.dragOverlay.title}</p>
+            <p className="mt-1 text-sm text-muted">{dict.captureForm.dragOverlay.subtitle}</p>
           </div>
         </div>
       )}
 
       {restored && (
         <div className="flex items-center justify-between gap-3 rounded-xl border border-brand-500/30 bg-brand-500/10 px-3 py-2 text-xs text-brand-200">
-          <span>📝 Rascunho recuperado — o que você tinha preenchido continua aqui.</span>
+          <span>{dict.captureForm.draftRestored.message}</span>
           <button
             type="button"
             className="btn-ghost btn-sm shrink-0"
             onClick={discardDraft}
           >
-            Descartar
+            {dict.captureForm.draftRestored.discard}
           </button>
         </div>
       )}
@@ -205,10 +207,9 @@ export function CaptureForm() {
       <section className="card p-4 sm:p-5">
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-sm font-semibold">O que você apurou</h2>
+            <h2 className="text-sm font-semibold">{dict.captureForm.content.heading}</h2>
             <p className="hint mt-0.5">
-              Cole o texto, o link da matéria ou anexe um PDF (boletim de
-              ocorrência, nota oficial). A IA lê tudo e entende o contexto.
+              {dict.captureForm.content.hint}
             </p>
           </div>
           {trimmed.length > 0 && (
@@ -219,7 +220,7 @@ export function CaptureForm() {
                   : "bg-emerald-500/15 text-emerald-300"
               }`}
             >
-              {isLink ? "🔗 Link" : "📝 Texto"}
+              {isLink ? dict.captureForm.content.badgeLink : dict.captureForm.content.badgeText}
             </span>
           )}
         </div>
@@ -228,12 +229,12 @@ export function CaptureForm() {
           className="input min-h-[9.5rem] resize-y leading-relaxed"
           value={content}
           onChange={(e) => setContent(e.target.value)}
-          placeholder={"Cole aqui o texto que você apurou…\n\nou apenas o link: https://…"}
+          placeholder={dict.captureForm.content.textareaPlaceholder}
           autoFocus
         />
 
         {isLink && (
-          <p className="hint">Vamos abrir o link e extrair o conteúdo automaticamente.</p>
+          <p className="hint">{dict.captureForm.content.linkHint}</p>
         )}
 
         {/* Documento anexado */}
@@ -244,9 +245,10 @@ export function CaptureForm() {
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{doc.name}</p>
                 <p className="text-xs text-emerald-300">
-                  texto extraído ✓ · {doc.pages} {doc.pages === 1 ? "página" : "páginas"} ·{" "}
-                  {doc.chars.toLocaleString("pt-BR")} caracteres
-                  {doc.truncated && " (cortado no limite)"}
+                  {dict.captureForm.doc.extracted} · {doc.pages}{" "}
+                  {doc.pages === 1 ? dict.captureForm.doc.pageCountOne : dict.captureForm.doc.pageCountOther} ·{" "}
+                  {doc.chars.toLocaleString(locale === "pt" ? "pt-BR" : "en-US")} {dict.captureForm.doc.charsLabel}
+                  {doc.truncated && ` (${dict.captureForm.doc.truncated})`}
                 </p>
               </div>
               <button
@@ -254,7 +256,7 @@ export function CaptureForm() {
                 className="btn-danger btn-sm shrink-0"
                 onClick={() => setDoc(null)}
               >
-                Remover
+                {dict.captureForm.doc.remove}
               </button>
             </div>
           ) : (
@@ -264,7 +266,7 @@ export function CaptureForm() {
               disabled={extracting}
               className="btn-ghost w-full"
             >
-              {extracting ? "Lendo o documento…" : "📎 Anexar documento (PDF) ou arraste aqui"}
+              {extracting ? dict.captureForm.doc.readingDocument : dict.captureForm.doc.attachButton}
             </button>
           )}
           <input
@@ -276,8 +278,7 @@ export function CaptureForm() {
           />
           {!doc && !extracting && (
             <p className="hint">
-              PDF com texto selecionável, até {MAX_DOC_MB} MB. Documento escaneado
-              (foto do papel) não funciona.
+              {dict.captureForm.doc.hint.replace("{max}", String(MAX_DOC_MB))}
             </p>
           )}
         </div>
@@ -287,13 +288,12 @@ export function CaptureForm() {
       <section className="card p-4 sm:p-5">
         <div className="mb-3">
           <h2 className="text-sm font-semibold">
-            Créditos e marcações{" "}
-            <span className="font-normal text-muted">— opcional</span>
+            {dict.captureForm.credits.heading}{" "}
+            <span className="font-normal text-muted">{dict.captureForm.credits.optional}</span>
           </h2>
           <p className="hint mt-0.5">
-            Quer marcar alguém? Diga o que a pessoa fez e informe o @. Entra no
-            fim da legenda, antes das hashtags — ex.:{" "}
-            <span className="text-ink">📸 @fotografo</span>
+            {dict.captureForm.credits.hint}{" "}
+            <span className="text-ink">{dict.captureForm.credits.example}</span>
           </p>
         </div>
         <CreditsInput credits={credits} onChange={setCredits} />
@@ -303,21 +303,21 @@ export function CaptureForm() {
 
       <div className="pt-1">
         <button type="submit" className="btn-primary w-full" disabled={!canSubmit}>
-          {busy ? <BusyLabel label={busy} seconds={elapsed} /> : "Gerar texto com IA →"}
+          {busy ? <BusyLabel label={busy} seconds={elapsed} /> : dict.captureForm.submit.cta}
         </button>
         {busy && elapsed >= 8 && (
           <p className="mt-2 text-center text-xs text-muted">
-            A IA gratuita às vezes demora — ainda estamos tentando, não recarregue a página.
+            {dict.captureForm.submit.slowHint}
           </p>
         )}
         {!busy && !trimmed && !doc && (
           <p className="mt-2 text-center text-xs text-faint">
-            Cole um texto, um link ou anexe um PDF para continuar
+            {dict.captureForm.submit.emptyHint}
           </p>
         )}
         {!busy && (trimmed || doc) && (
           <p className="mt-2 text-center text-xs text-faint">
-            Depois você adiciona a foto e revisa antes de publicar.
+            {dict.captureForm.submit.nextStepHint}
           </p>
         )}
       </div>

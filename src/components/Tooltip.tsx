@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useLocale } from "./LocaleProvider";
 
 interface Props {
   /** Texto explicativo. */
@@ -14,6 +15,7 @@ interface Props {
  * no toque (mobile) — por isso é clique + hover, não só hover.
  */
 export function Tooltip({ text, where }: Props) {
+  const { dict } = useLocale();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLSpanElement>(null);
 
@@ -35,7 +37,7 @@ export function Tooltip({ text, where }: Props) {
     <span ref={ref} className="group relative inline-flex">
       <button
         type="button"
-        aria-label="O que é isso?"
+        aria-label={dict.tooltip.ariaLabel}
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
         className="flex h-5 w-5 items-center justify-center rounded-full border border-line

@@ -1,0 +1,38 @@
+export const artEditor = {
+  pt: {
+    helper: {
+      dragPhoto: "Arraste a foto para enquadrar. Arraste o",
+      titleWord: "título",
+      orSubtitle: "ou o",
+      subtitleWord: "subtítulo",
+      suffix: "para reposicionar o texto — o template continua igual, só muda nesta pauta.",
+    },
+    zoomLabel: "Zoom da foto",
+    resetTextPosition: "↺ Restaurar posição padrão do texto",
+    titleFieldLabel: "Título na imagem",
+    titleFieldPlaceholder: "Manchete curta e direta",
+    subtitleFieldLabel: "Subtítulo na imagem",
+    subtitleFieldPlaceholder: "Um detalhe que o título não contou",
+    formatLabel: "Formato",
+    saveButton: "Salvar arte e revisar",
+    savingButton: "Gerando a arte…",
+  },
+  en: {
+    helper: {
+      dragPhoto: "Drag the photo to frame it. Drag the",
+      titleWord: "title",
+      orSubtitle: "or the",
+      subtitleWord: "subtitle",
+      suffix: "to reposition the text — the template stays the same, only this post changes.",
+    },
+    zoomLabel: "Photo zoom",
+    resetTextPosition: "↺ Reset text to default position",
+    titleFieldLabel: "Title on image",
+    titleFieldPlaceholder: "Short, direct headline",
+    subtitleFieldLabel: "Subtitle on image",
+    subtitleFieldPlaceholder: "A detail the title didn't cover",
+    formatLabel: "Format",
+    saveButton: "Save art and review",
+    savingButton: "Generating art…",
+  },
+};

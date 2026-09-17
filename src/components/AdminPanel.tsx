@@ -2,22 +2,25 @@
 
 import { useEffect, useState } from "react";
 import { apiGet, apiPost, apiPatch, apiDelete } from "@/lib/api-client";
-import { ROLE_LABELS, USER_ROLES, type UserRole } from "@/lib/domain";
+import { USER_ROLES, type UserRole } from "@/lib/domain";
 import { TemplateBuilder } from "./TemplateBuilder";
 import { Tooltip } from "./Tooltip";
+import { useLocale } from "./LocaleProvider";
 
-type Tab = "style" | "templates" | "users" | "keys";
+type Tab = "style" | "templates" | "users" | "keys" | "settings";
 
 export function AdminPanel({ role }: { role: UserRole }) {
+  const { dict } = useLocale();
   const isAdmin = role === "admin";
   const canManageUsers = role === "admin" || role === "manager";
   const [tab, setTab] = useState<Tab>("style");
 
   const tabs: { id: Tab; label: string; show: boolean }[] = [
-    { id: "style", label: "Estilo do jornal", show: true },
-    { id: "templates", label: "Templates", show: true },
-    { id: "users", label: "Usuários", show: canManageUsers },
-    { id: "keys", label: "API keys", show: isAdmin },
+    { id: "style", label: dict.adminPanel.tabs.style, show: true },
+    { id: "templates", label: dict.adminPanel.tabs.templates, show: true },
+    { id: "users", label: dict.adminPanel.tabs.users, show: canManageUsers },
+    { id: "keys", label: dict.adminPanel.tabs.apiKeys, show: isAdmin },
+    { id: "settings", label: dict.adminPanel.tabs.settings, show: isAdmin },
   ];
 
   return (
@@ -46,6 +49,7 @@ export function AdminPanel({ role }: { role: UserRole }) {
       {tab === "templates" && <TemplatesSection />}
       {tab === "users" && canManageUsers && <UsersSection canPromoteAdmin={isAdmin} />}
       {tab === "keys" && isAdmin && <KeysSection />}
+      {tab === "settings" && isAdmin && <SettingsSection />}
     </div>
   );
 }
@@ -77,6 +81,7 @@ interface StyleExample {
 const EMPTY_FORM = { title: "", subtitle: "", caption: "" };
 
 function StyleSection() {
+  const { dict } = useLocale();
   const { error, wrap } = useAsyncError();
   const [examples, setExamples] = useState<StyleExample[]>([]);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -107,36 +112,40 @@ function StyleSection() {
   return (
     <div className="max-w-3xl space-y-4">
       <div className="alert-info">
-        Cadastre <strong>posts reais do seu jornal</strong> como referência. A IA usa
-        todos eles para aprender o <strong>tom e o formato</strong> — nunca copia o
-        conteúdo. Quanto mais variados os exemplos, melhor o resultado.
+        {dict.adminPanel.styleSection.infoPrefix}
+        <strong>{dict.adminPanel.styleSection.infoStrong1}</strong>
+        {dict.adminPanel.styleSection.infoMiddle}
+        <strong>{dict.adminPanel.styleSection.infoStrong2}</strong>
+        {dict.adminPanel.styleSection.infoSuffix}
       </div>
 
       {/* Exemplos cadastrados */}
       {examples.map((ex, i) => (
         <article key={ex.id} className="card p-4">
           <header className="mb-3 flex items-center justify-between gap-2">
-            <h3 className="text-sm font-semibold">Exemplo {i + 1}</h3>
+            <h3 className="text-sm font-semibold">
+              {dict.adminPanel.styleSection.exampleTitle} {i + 1}
+            </h3>
             <button className="btn-danger btn-sm" onClick={() => remove(ex.id)}>
-              Remover
+              {dict.common.remove}
             </button>
           </header>
           <dl className="space-y-2.5 text-sm">
             <div>
               <dt className="text-[11px] font-semibold uppercase tracking-wider text-faint">
-                Título na imagem
+                {dict.adminPanel.styleSection.titleLabel}
               </dt>
               <dd className="font-art text-ink">{ex.title || "—"}</dd>
             </div>
             <div>
               <dt className="text-[11px] font-semibold uppercase tracking-wider text-faint">
-                Subtítulo na imagem
+                {dict.adminPanel.styleSection.subtitleLabel}
               </dt>
               <dd className="font-art text-ink">{ex.subtitle || "—"}</dd>
             </div>
             <div>
               <dt className="text-[11px] font-semibold uppercase tracking-wider text-faint">
-                Legenda
+                {dict.adminPanel.styleSection.captionDisplayLabel}
               </dt>
               <dd className="whitespace-pre-wrap text-muted">{ex.caption || "—"}</dd>
             </div>
@@ -147,49 +156,49 @@ function StyleSection() {
       {/* Novo exemplo */}
       {adding ? (
         <div className="card space-y-4 p-4">
-          <h3 className="text-sm font-semibold">Novo exemplo</h3>
+          <h3 className="text-sm font-semibold">{dict.adminPanel.styleSection.newExampleTitle}</h3>
 
           <Counted
-            id="ex-title" label="Título na imagem" max={TITLE_MAX}
+            id="ex-title" label={dict.adminPanel.styleSection.titleLabel} max={TITLE_MAX}
             value={form.title} onChange={(v) => setForm({ ...form, title: v })}
-            placeholder="Tragédia em BH: acidente entre motos deixa dois mortos"
-            tip="A manchete escrita SOBRE a foto. Curta e direta, no máximo 69 caracteres."
-            where="Aparece dentro da arte, na parte de cima do bloco de texto"
+            placeholder={dict.adminPanel.styleSection.titlePlaceholder}
+            tip={dict.adminPanel.styleSection.titleTip}
+            where={dict.adminPanel.styleSection.titleWhere}
           />
 
           <Counted
-            id="ex-sub" label="Subtítulo na imagem" max={SUBTITLE_MAX} rows={2}
+            id="ex-sub" label={dict.adminPanel.styleSection.subtitleLabel} max={SUBTITLE_MAX} rows={2}
             value={form.subtitle} onChange={(v) => setForm({ ...form, subtitle: v })}
-            placeholder="Duas pessoas morreram em acidente na José Cândido da Silveira."
-            tip="Uma frase logo abaixo do título, com um detalhe que o título não disse. Máximo 149 caracteres."
-            where="Aparece dentro da arte, logo abaixo do título"
+            placeholder={dict.adminPanel.styleSection.subtitlePlaceholder}
+            tip={dict.adminPanel.styleSection.subtitleTip}
+            where={dict.adminPanel.styleSection.subtitleWhere}
           />
 
           <div>
             <label className="label" htmlFor="ex-caption">
-              Legenda do Instagram
+              {dict.adminPanel.styleSection.captionFieldLabel}
               <Tooltip
-                text="O texto completo do post, com os parágrafos, os créditos (📸 @fulano) e as hashtags no fim — exatamente como sua redação publica."
-                where="Vai publicada embaixo da imagem, no Instagram"
+                text={dict.adminPanel.styleSection.captionTooltip}
+                where={dict.adminPanel.styleSection.captionWhere}
               />
             </label>
             <textarea
               id="ex-caption" className="input min-h-[10rem] resize-y"
               value={form.caption}
               onChange={(e) => setForm({ ...form, caption: e.target.value })}
-              placeholder={"Um grave acidente envolvendo duas motocicletas…\n\n📸 @fotografo\n\n#BH #Acidente"}
+              placeholder={dict.adminPanel.styleSection.captionPlaceholder}
             />
           </div>
 
           {error && <p className="alert-error">{error}</p>}
           <div className="flex flex-wrap gap-2">
-            <button className="btn-primary" onClick={add}>Salvar exemplo</button>
-            <button className="btn-subtle" onClick={() => setAdding(false)}>Cancelar</button>
+            <button className="btn-primary" onClick={add}>{dict.adminPanel.styleSection.saveExample}</button>
+            <button className="btn-subtle" onClick={() => setAdding(false)}>{dict.common.cancel}</button>
           </div>
         </div>
       ) : (
         <button className="btn-ghost w-full" onClick={() => setAdding(true)}>
-          + Adicionar exemplo
+          {dict.adminPanel.styleSection.addExample}
         </button>
       )}
 
@@ -237,6 +246,7 @@ interface Template {
 }
 
 function TemplatesSection() {
+  const { dict } = useLocale();
   const [templates, setTemplates] = useState<Template[]>([]);
 
   const load = () =>
@@ -255,7 +265,7 @@ function TemplatesSection() {
 
       <div>
         <h3 className="mb-3 text-sm font-semibold">
-          Templates cadastrados ({templates.length})
+          {dict.adminPanel.templatesSection.registeredTitle} ({templates.length})
         </h3>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {templates.map((t) => (
@@ -270,13 +280,13 @@ function TemplatesSection() {
                 <div className="truncate text-sm font-medium">{t.name}</div>
                 <div className="text-xs text-muted">
                   {t.canvasWidth}×{t.canvasHeight} ·{" "}
-                  {t.isActive ? "ativo" : "inativo"}
+                  {t.isActive ? dict.adminPanel.templatesSection.active : dict.adminPanel.templatesSection.inactive}
                 </div>
               </div>
             </div>
           ))}
           {templates.length === 0 && (
-            <p className="text-sm text-muted">Nenhum template ainda.</p>
+            <p className="text-sm text-muted">{dict.adminPanel.templatesSection.empty}</p>
           )}
         </div>
       </div>
@@ -295,6 +305,8 @@ interface AdminUser {
 }
 
 function UsersSection({ canPromoteAdmin }: { canPromoteAdmin: boolean }) {
+  const { dict, locale } = useLocale();
+  const dateLocale = locale === "pt" ? "pt-BR" : "en-US";
   const { error, wrap } = useAsyncError();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [form, setForm] = useState({ name: "", email: "", role: "staff" as UserRole });
@@ -322,10 +334,12 @@ function UsersSection({ canPromoteAdmin }: { canPromoteAdmin: boolean }) {
       }>("/api/users", form);
       setForm({ name: "", email: "", role: "staff" });
       if (emailSent) {
-        setResetSuccess(`Usuário criado e login enviado para ${user.email}.`);
+        setResetSuccess(
+          `${dict.adminPanel.users.createdSuccessPrefix}${user.email}${dict.adminPanel.users.createdSuccessSuffix}`,
+        );
       } else {
         setResetError(
-          `Usuário criado, mas o e-mail falhou: ${emailError}. Use "Reenviar login" depois de resolver.`,
+          `${dict.adminPanel.users.createdErrorPrefix}${emailError}${dict.adminPanel.users.createdErrorSuffix}`,
         );
       }
       await load();
@@ -340,7 +354,7 @@ function UsersSection({ canPromoteAdmin }: { canPromoteAdmin: boolean }) {
   const resetPassword = async (u: AdminUser) => {
     if (
       !confirm(
-        `Gerar uma senha nova pra ${u.name} e mandar por e-mail pra ${u.email}?`,
+        `${dict.adminPanel.users.resetConfirmPrefix}${u.name}${dict.adminPanel.users.resetConfirmMiddle}${u.email}${dict.adminPanel.users.resetConfirmSuffix}`,
       )
     ) {
       return;
@@ -350,7 +364,9 @@ function UsersSection({ canPromoteAdmin }: { canPromoteAdmin: boolean }) {
     setResetting(u.id);
     try {
       await apiPost(`/api/users/${u.id}/reset-password`);
-      setResetSuccess(`Login enviado para ${u.email}.`);
+      setResetSuccess(
+        `${dict.adminPanel.users.resetSuccessPrefix}${u.email}${dict.adminPanel.users.resetSuccessSuffix}`,
+      );
       await load();
     } catch (err) {
       setResetError((err as Error).message);
@@ -362,26 +378,26 @@ function UsersSection({ canPromoteAdmin }: { canPromoteAdmin: boolean }) {
   return (
     <div className="grid gap-5 lg:grid-cols-2">
       <div className="card space-y-3 p-4">
-        <h3 className="text-sm font-semibold">Novo usuário</h3>
-        <input className="input" placeholder="Nome" value={form.name}
+        <h3 className="text-sm font-semibold">{dict.adminPanel.users.newUserTitle}</h3>
+        <input className="input" placeholder={dict.adminPanel.users.namePlaceholder} value={form.name}
           onChange={(e) => setForm({ ...form, name: e.target.value })} />
-        <input className="input" placeholder="E-mail" type="email" value={form.email}
+        <input className="input" placeholder={dict.adminPanel.users.emailPlaceholder} type="email" value={form.email}
           onChange={(e) => setForm({ ...form, email: e.target.value })} />
         <select className="input" value={form.role}
           onChange={(e) => setForm({ ...form, role: e.target.value as UserRole })}>
           {assignableRoles.map((r) => (
-            <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+            <option key={r} value={r}>{dict.common.role[r]}</option>
           ))}
         </select>
         {!canPromoteAdmin && (
-          <p className="hint">Gerente só cria contas de gerente ou jornalista.</p>
+          <p className="hint">{dict.adminPanel.users.managerHint}</p>
         )}
         {error && <p className="alert-error">{error}</p>}
-        <button className="btn-primary" onClick={create}>Criar usuário</button>
+        <button className="btn-primary" onClick={create}>{dict.adminPanel.users.createButton}</button>
       </div>
 
       <div className="space-y-2">
-        <h3 className="text-sm font-semibold">Usuários ({users.length})</h3>
+        <h3 className="text-sm font-semibold">{dict.adminPanel.users.listTitle} ({users.length})</h3>
         {resetError && <p className="alert-error">{resetError}</p>}
         {resetSuccess && <p className="alert-success">✅ {resetSuccess}</p>}
         {users.map((u) => (
@@ -391,8 +407,8 @@ function UsersSection({ canPromoteAdmin }: { canPromoteAdmin: boolean }) {
               <div className="truncate text-xs text-muted">{u.email}</div>
               {u.passwordResetAt && (
                 <div className="text-[11px] text-faint">
-                  login enviado em{" "}
-                  {new Date(u.passwordResetAt).toLocaleString("pt-BR", {
+                  {dict.adminPanel.users.passwordResetAtPrefix}{" "}
+                  {new Date(u.passwordResetAt).toLocaleString(dateLocale, {
                     day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
                   })}
                 </div>
@@ -406,7 +422,7 @@ function UsersSection({ canPromoteAdmin }: { canPromoteAdmin: boolean }) {
             >
               {(canPromoteAdmin || u.role === "admin" ? USER_ROLES : assignableRoles).map(
                 (r) => (
-                  <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                  <option key={r} value={r}>{dict.common.role[r]}</option>
                 ),
               )}
             </select>
@@ -414,15 +430,15 @@ function UsersSection({ canPromoteAdmin }: { canPromoteAdmin: boolean }) {
               className="btn-subtle btn-sm"
               onClick={() => resetPassword(u)}
               disabled={resetting === u.id}
-              title="Gera uma senha nova e manda por e-mail"
+              title={dict.adminPanel.users.resendLoginTitle}
             >
-              {resetting === u.id ? "Enviando…" : "Reenviar login"}
+              {resetting === u.id ? dict.adminPanel.users.sendingButton : dict.adminPanel.users.resendLoginButton}
             </button>
             <button
               className={u.active ? "btn-ghost btn-sm" : "btn-success btn-sm"}
               onClick={() => update(u.id, { active: !u.active })}
             >
-              {u.active ? "Desativar" : "Ativar"}
+              {u.active ? dict.adminPanel.users.deactivateButton : dict.adminPanel.users.activateButton}
             </button>
           </div>
         ))}
@@ -441,6 +457,8 @@ interface ApiKeyRow {
 }
 
 function KeysSection() {
+  const { dict, locale } = useLocale();
+  const dateLocale = locale === "pt" ? "pt-BR" : "en-US";
   const { error, wrap } = useAsyncError();
   const [keys, setKeys] = useState<ApiKeyRow[]>([]);
   const [name, setName] = useState("");
@@ -470,19 +488,19 @@ function KeysSection() {
     <div className="grid gap-5 lg:grid-cols-2">
       <div className="card space-y-3 p-4">
         <h3 className="flex items-center gap-1.5 text-sm font-semibold">
-          Nova API key
-          <Tooltip text="Para integrar outro sistema da redação com o JornAI (ex.: enviar pautas automaticamente). Não é necessária para o uso normal pelo site." />
+          {dict.adminPanel.apiKeys.newKeyTitle}
+          <Tooltip text={dict.adminPanel.apiKeys.newKeyTooltip} />
         </h3>
-        <input className="input" placeholder="Nome da chave" value={name}
+        <input className="input" placeholder={dict.adminPanel.apiKeys.namePlaceholder} value={name}
           onChange={(e) => setName(e.target.value)} />
         {error && <p className="alert-error">{error}</p>}
         <button className="btn-primary" onClick={create} disabled={!name}>
-          Gerar chave
+          {dict.adminPanel.apiKeys.createButton}
         </button>
         {secret && (
           <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
             <p className="text-sm font-medium text-amber-300">
-              Copie agora — não será exibida de novo:
+              {dict.adminPanel.apiKeys.secretWarning}
             </p>
             <code className="mt-1.5 block break-all rounded-lg bg-bg p-2 text-xs">
               {secret}
@@ -492,24 +510,94 @@ function KeysSection() {
       </div>
 
       <div className="space-y-2">
-        <h3 className="text-sm font-semibold">Chaves ({keys.length})</h3>
+        <h3 className="text-sm font-semibold">{dict.adminPanel.apiKeys.listTitle} ({keys.length})</h3>
         {keys.map((k) => (
           <div key={k.id} className="card flex items-center gap-3 p-3">
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-medium">{k.name}</div>
               <div className="text-xs text-muted">
-                {k.revokedAt ? "revogada" : "ativa"} ·{" "}
-                {new Date(k.createdAt).toLocaleDateString("pt-BR")}
+                {k.revokedAt ? dict.adminPanel.apiKeys.revoked : dict.adminPanel.apiKeys.active} ·{" "}
+                {new Date(k.createdAt).toLocaleDateString(dateLocale)}
               </div>
             </div>
             {!k.revokedAt && (
               <button className="btn-danger btn-sm" onClick={() => revoke(k.id)}>
-                Revogar
+                {dict.adminPanel.apiKeys.revokeButton}
               </button>
             )}
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ── Configurações gerais ─────────────────────────────────────
+interface AppSettings {
+  reviewRequired: boolean;
+}
+
+function SettingsSection() {
+  const { dict } = useLocale();
+  const t = dict.adminPanel.settingsSection;
+  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    apiGet<{ settings: AppSettings }>("/api/settings").then((d) => setSettings(d.settings));
+  }, []);
+
+  async function toggleReview() {
+    if (!settings || saving) return;
+    const prev = settings;
+    setSettings({ reviewRequired: !prev.reviewRequired });
+    setSaving(true);
+    setError(null);
+    try {
+      const { settings: saved } = await apiPatch<{ settings: AppSettings }>("/api/settings", {
+        reviewRequired: !prev.reviewRequired,
+      });
+      setSettings(saved);
+    } catch (err) {
+      setSettings(prev);
+      setError((err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!settings) return null;
+
+  return (
+    <div className="max-w-2xl space-y-3">
+      <div className="card flex items-start justify-between gap-4 p-4">
+        <div>
+          <h3 className="text-sm font-semibold">{t.reviewToggleTitle}</h3>
+          <p className="hint mb-0 mt-1">
+            {settings.reviewRequired ? t.reviewToggleOnDesc : t.reviewToggleOffDesc}
+          </p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={settings.reviewRequired}
+          aria-label={t.reviewToggleTitle}
+          onClick={toggleReview}
+          disabled={saving}
+          className={`relative h-7 w-12 shrink-0 rounded-full transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-60 ${
+            settings.reviewRequired ? "bg-emerald-500" : "bg-line"
+          }`}
+        >
+          <span
+            className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-soft transition-transform duration-200 ${
+              settings.reviewRequired ? "translate-x-6" : "translate-x-1"
+            }`}
+          />
+        </button>
+      </div>
+      {saving && <p className="hint">{t.savingLabel}</p>}
+      {error && <p className="alert-error">{error}</p>}
     </div>
   );
 }
