@@ -1,5 +1,5 @@
 import { type NextRequest } from "next/server";
-import { requireUser } from "@/lib/auth";
+import { requireCompanyUser } from "@/lib/auth";
 import { rejectSchema } from "@/lib/validation";
 import { rejectPost } from "@/lib/services/posts";
 import { ok, route } from "@/lib/http";
@@ -10,7 +10,7 @@ export const POST = route(
     req: NextRequest,
     ctx: { params: Promise<{ id: string; vid: string }> },
   ) => {
-    const user = await requireUser();
+    const user = await requireCompanyUser();
     const { id, vid } = await ctx.params;
     const { reason } = rejectSchema.parse(await req.json());
     const post = await rejectPost(user, id, vid, reason);

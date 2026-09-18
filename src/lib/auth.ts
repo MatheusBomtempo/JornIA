@@ -31,6 +31,7 @@ export async function setSessionCookie(user: User): Promise<void> {
     name: user.name,
     email: user.email,
     role: user.role,
+    companyId: user.companyId,
   });
   const store = await cookies();
   store.set(SESSION_COOKIE, token, {
@@ -67,6 +68,19 @@ export async function requireUser(): Promise<User> {
   const user = await getCurrentUser();
   if (!user) throw unauthorized();
   return user;
+}
+
+/**
+ * Igual a requireUser, mas garante companyId presente — toda rota que lê/
+ * escreve dado do "ambiente" (posts, templates, estilo, configurações, API
+ * keys) exige isso; só existe usuário sem empresa entre o login e o
+ * onboarding (ver /onboarding), e nenhuma dessas rotas é alcançável nesse
+ * meio-tempo (middleware redireciona antes).
+ */
+export async function requireCompanyUser(): Promise<User & { companyId: string }> {
+  const user = await requireUser();
+  if (!user.companyId) throw unauthorized("Cadastre sua empresa antes de continuar.");
+  return user as User & { companyId: string };
 }
 
 /**

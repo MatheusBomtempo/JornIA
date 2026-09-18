@@ -459,17 +459,49 @@ export function ArtEditor({ postId, photos, templates, initial, onSaved }: Props
 
       {templates.length > 1 && (
         <div>
-          <label className="label" htmlFor="tpl">{dict.artEditor.formatLabel}</label>
-          <select
-            id="tpl" className="input" value={templateId}
-            onChange={(e) => setTemplateId(e.target.value)}
-          >
-            {templates.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name} ({t.canvasWidth}×{t.canvasHeight})
-              </option>
-            ))}
-          </select>
+          <label className="label">{dict.artEditor.formatLabel}</label>
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+            {templates.map((t) => {
+              const active = t.id === templateId;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setTemplateId(t.id)}
+                  aria-pressed={active}
+                  className={`group relative overflow-hidden rounded-xl border-2 bg-black text-left transition-all ${
+                    active
+                      ? "border-brand-500 ring-2 ring-brand-500/40"
+                      : "border-line hover:border-brand-500/50"
+                  }`}
+                >
+                  <div
+                    className="w-full bg-elevated"
+                    style={{ aspectRatio: `${t.canvasWidth} / ${t.canvasHeight}` }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={t.overlayAssetUrl}
+                      alt={t.name}
+                      className="h-full w-full object-contain"
+                    />
+                  </div>
+                  <div
+                    className={`truncate px-1.5 py-1.5 text-center text-[11px] font-medium leading-tight ${
+                      active ? "text-brand-300" : "text-muted"
+                    }`}
+                  >
+                    {t.name}
+                  </div>
+                  {active && (
+                    <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-brand-500 text-[10px] text-white">
+                      ✓
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 

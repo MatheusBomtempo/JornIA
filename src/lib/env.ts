@@ -85,6 +85,14 @@ export const env = {
     },
   },
 
+  // Busca de foto embutida no passo "Imagem" (ver ImageSuggestions em
+  // PostWorkspace) — deixa escolher uma foto de banco sem sair do site,
+  // ela já vem baixada e pronta pra virar a arte. Opcional: sem a chave,
+  // o botão cai de volta pra abrir a busca do Pexels numa aba nova.
+  photoSearch: {
+    pexelsKey: process.env.PEXELS_API_KEY,
+  },
+
   instagram: {
     userId: process.env.IG_USER_ID,
     accessToken: process.env.IG_ACCESS_TOKEN,

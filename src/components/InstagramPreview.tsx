@@ -4,12 +4,17 @@ import { useLocale } from "./LocaleProvider";
 
 interface Props {
   artUrl?: string | null;
+  /** Post de vídeo: toca de verdade no preview — a revisão precisa assistir antes de aprovar. */
+  videoUrl?: string | null;
   caption?: string | null;
   handle?: string;
+  /** Logo da empresa (onboarding) — substitui o avatar genérico quando presente. */
+  logoUrl?: string | null;
   /**
    * Proporção largura/altura do template (ex.: 1080/1350 para 4:5,
-   * 1080/1080 para 1:1). Sem isso, o preview assume um quadrado e corta a
-   * imagem quando o post é 4:5 — sempre passe o tamanho real do template.
+   * 1080/1080 para 1:1, 1080/1920 pro vídeo). Sem isso, o preview assume um
+   * quadrado e corta a imagem quando o post é 4:5 — sempre passe o tamanho
+   * real do template.
    */
   aspectRatio?: number;
 }
@@ -17,8 +22,10 @@ interface Props {
 /** Mockup de post do feed do Instagram para a tela de revisão. */
 export function InstagramPreview({
   artUrl,
+  videoUrl,
   caption,
   handle,
+  logoUrl,
   aspectRatio = 1080 / 1350,
 }: Props) {
   const { dict } = useLocale();
@@ -26,14 +33,26 @@ export function InstagramPreview({
   return (
     <div className="mx-auto w-full max-w-sm overflow-hidden rounded-2xl border border-line bg-elevated">
       <div className="flex items-center gap-2.5 px-3 py-2.5">
-        <div className="h-8 w-8 rounded-full bg-gradient-to-tr from-amber-400 via-red-500 to-purple-600" />
+        {logoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={logoUrl} alt="" className="h-8 w-8 rounded-full object-cover" />
+        ) : (
+          <div className="h-8 w-8 rounded-full bg-gradient-to-tr from-amber-400 via-red-500 to-purple-600" />
+        )}
         <span className="text-sm font-semibold">{resolvedHandle}</span>
         <span className="ml-auto text-muted" aria-hidden>···</span>
       </div>
 
       {/* A proporção bate exatamente com o template, então nada é cortado. */}
       <div className="bg-black" style={{ aspectRatio }}>
-        {artUrl ? (
+        {videoUrl ? (
+          <video
+            src={videoUrl}
+            controls
+            playsInline
+            className="h-full w-full object-cover"
+          />
+        ) : artUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={artUrl}

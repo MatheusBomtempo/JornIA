@@ -97,6 +97,78 @@ export async function publishToInstagram(
   return { creationId, mediaId, permalink };
 }
 
+// ── Vídeo (Reels) ────────────────────────────────────────────
+/**
+ * Publicação de vídeo é assíncrona do lado do Meta: cria o container
+ * (media_type=REELS + video_url), espera o processamento (status_code vai
+ * de IN_PROGRESS pra FINISHED — pode levar dezenas de segundos a alguns
+ * minutos dependendo do tamanho), só então publica. Diferente da foto, que
+ * fica pronta na hora.
+ */
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Passo 1 (vídeo): cria o container de mídia como Reels. */
+export async function createVideoMediaContainer(
+  videoUrl: string,
+  caption: string,
+): Promise<string> {
+  const { userId, token } = assertConfigured();
+  const res = await fetch(`${baseUrl()}/${userId}/media`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      media_type: "REELS",
+      video_url: videoUrl,
+      caption,
+      access_token: token,
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.id) {
+    throw new Error(igError("criar container de vídeo", data));
+  }
+  return data.id as string;
+}
+
+/** Espera o Meta terminar de baixar/processar o vídeo antes de publicar. */
+async function waitForVideoContainerReady(
+  creationId: string,
+  token: string,
+): Promise<void> {
+  const maxAttempts = 40;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const res = await fetch(
+      `${baseUrl()}/${creationId}?fields=status_code&access_token=${token}`,
+    );
+    const data = await res.json();
+    if (!res.ok) throw new Error(igError("consultar status do vídeo", data));
+    if (data.status_code === "FINISHED") return;
+    if (data.status_code === "ERROR" || data.status_code === "EXPIRED") {
+      throw new Error(
+        `O Instagram não conseguiu processar o vídeo (status: ${data.status_code}).`,
+      );
+    }
+    await sleep(Math.min(3000 + attempt * 500, 8000));
+  }
+  throw new Error("Tempo esgotado esperando o Instagram processar o vídeo.");
+}
+
+/** Fluxo completo de publicação de vídeo (container + espera + publish + permalink). */
+export async function publishVideoToInstagram(
+  videoUrl: string,
+  caption: string,
+): Promise<PublishResult> {
+  const { token } = assertConfigured();
+  const creationId = await createVideoMediaContainer(videoUrl, caption);
+  await waitForVideoContainerReady(creationId, token);
+  const mediaId = await publishMediaContainer(creationId);
+  const permalink = await fetchPermalink(mediaId);
+  return { creationId, mediaId, permalink };
+}
+
 function igError(action: string, data: unknown): string {
   const err = (data as { error?: { message?: string } })?.error;
   return `Erro ao ${action} no Instagram: ${err?.message ?? JSON.stringify(data)}`;

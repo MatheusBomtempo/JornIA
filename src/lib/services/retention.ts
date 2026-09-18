@@ -8,7 +8,8 @@ const PENDING_TTL_DAYS = 3; // in_review | failed
 type PurgeCandidate = {
   id: string;
   photos: { storageUrl: string }[];
-  versions: { renderedArtUrl: string | null }[];
+  videos: { storageUrl: string }[];
+  versions: { renderedArtUrl: string | null; renderedVideoUrl: string | null }[];
 };
 
 /**
@@ -25,8 +26,10 @@ export async function purgePostsWithMedia(posts: PurgeCandidate[]): Promise<void
   const urls = new Set<string>();
   for (const post of posts) {
     for (const photo of post.photos) urls.add(photo.storageUrl);
+    for (const video of post.videos) urls.add(video.storageUrl);
     for (const version of post.versions) {
       if (version.renderedArtUrl) urls.add(version.renderedArtUrl);
+      if (version.renderedVideoUrl) urls.add(version.renderedVideoUrl);
     }
   }
 
@@ -71,7 +74,8 @@ export async function cleanupExpiredPosts(): Promise<{ purged: number }> {
     select: {
       id: true,
       photos: { select: { storageUrl: true } },
-      versions: { select: { renderedArtUrl: true } },
+      videos: { select: { storageUrl: true } },
+      versions: { select: { renderedArtUrl: true, renderedVideoUrl: true } },
     },
   });
   if (expired.length === 0) return { purged: 0 };

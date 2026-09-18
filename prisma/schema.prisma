@@ -20,6 +20,30 @@ enum UserRole {
   @@map("user_role")
 }
 
+/**
+ * Uma empresa/redação — cada uma tem seu próprio feed, templates, estilo e
+ * configurações, totalmente isolados das demais (multi-tenant). Criada pelo
+ * admin no primeiro login (ver /onboarding); todo usuário criado depois
+ * herda a companyId de quem criou.
+ */
+model Company {
+  id              String   @id @default(uuid()) @db.Uuid
+  name            String
+  logoUrl         String?  @map("logo_url")
+  /** @ do Instagram da empresa (com arroba), ex.: "@meujornal". Opcional. */
+  instagramHandle String?  @map("instagram_handle")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  users         User[]
+  posts         Post[]
+  templates     ArtTemplate[]
+  styleExamples StyleExample[]
+  apiKeys       ApiKey[]
+  settings      AppSettings?
+
+  @@map("companies")
+}
+
 model User {
   id           String   @id @default(uuid()) @db.Uuid
   name         String
@@ -30,7 +54,10 @@ model User {
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   /** Última vez que um admin/manager resetou a senha e mandou por e-mail. */
   passwordResetAt DateTime? @map("password_reset_at") @db.Timestamptz(6)
+  /** Nulo só antes do onboarding (admin recém-criado, sem empresa ainda). */
+  companyId    String?  @map("company_id") @db.Uuid
 
+  company          Company?         @relation(fields: [companyId], references: [id])
   posts            Post[]
   apiKeysCreated   ApiKey[]
   reviewDecisions  ReviewDecision[]
@@ -46,18 +73,22 @@ model ApiKey {
   name       String
   keyHash    String    @map("key_hash")
   scopes     String[]
+  companyId  String    @map("company_id") @db.Uuid
   createdBy  String?   @map("created_by") @db.Uuid
   lastUsedAt DateTime? @map("last_used_at") @db.Timestamptz(6)
   revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(6)
   createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  creator User? @relation(fields: [createdBy], references: [id])
+  company Company @relation(fields: [companyId], references: [id])
+  creator User?   @relation(fields: [createdBy], references: [id])
 
+  @@index([companyId])
   @@map("api_keys")
 }
 
 model Post {
   id             String   @id @default(uuid()) @db.Uuid
+  companyId      String   @map("company_id") @db.Uuid
   createdBy      String   @map("created_by") @db.Uuid
   region         String?
   sourceType     String   @map("source_type") // 'photo' | 'text' | 'link'
@@ -70,12 +101,15 @@ model Post {
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
+  company  Company       @relation(fields: [companyId], references: [id])
   author   User          @relation(fields: [createdBy], references: [id])
   photos   PostPhoto[]
+  videos   PostVideo[]
   versions PostVersion[]
 
   @@index([status])
   @@index([createdBy])
+  @@index([companyId])
   @@map("posts")
 }
 
@@ -92,8 +126,32 @@ model PostPhoto {
   @@map("post_photos")
 }
 
+/**
+ * Vídeo original enviado (antes do render com o texto animado). Mesmo
+ * padrão do PostPhoto: só anexa, a escolha de qual usar é manual.
+ */
+model PostVideo {
+  id         String   @id @default(uuid()) @db.Uuid
+  postId     String   @map("post_id") @db.Uuid
+  storageUrl String   @map("storage_url")
+  durationMs Int?     @map("duration_ms")
+  /** Frame do meio do vídeo, já em 9:16 — fundo do preview no editor. */
+  previewFrameUrl String? @map("preview_frame_url")
+  /** Dimensões do arquivo enviado — usadas pra avisar quanto o 9:16 vai cortar. */
+  width      Int?
+  height     Int?
+  orderIndex Int?     @map("order_index")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  post               Post          @relation(fields: [postId], references: [id], onDelete: Cascade)
+  selectedInVersions PostVersion[]
+
+  @@map("post_videos")
+}
+
 model ArtTemplate {
   id              String   @id @default(uuid()) @db.Uuid
+  companyId       String   @map("company_id") @db.Uuid
   name            String
   canvasWidth     Int      @default(1080) @map("canvas_width")
   canvasHeight    Int      @default(1080) @map("canvas_height") // ou 1350 pro formato 4:5
@@ -106,8 +164,10 @@ model ArtTemplate {
   isActive        Boolean  @default(true) @map("is_active")
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
+  company  Company       @relation(fields: [companyId], references: [id])
   versions PostVersion[]
 
+  @@index([companyId])
   @@map("art_templates")
 }
 
@@ -136,6 +196,7 @@ model StyleReference {
  */
 model StyleExample {
   id         String   @id @default(uuid()) @db.Uuid
+  companyId  String   @map("company_id") @db.Uuid
   title      String? // título da arte (máx. 69)
   subtitle   String? // subtítulo da arte (máx. 149)
   caption    String? // legenda completa do Instagram
@@ -144,8 +205,10 @@ model StyleExample {
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  author User? @relation(fields: [createdBy], references: [id])
+  company Company @relation(fields: [companyId], references: [id])
+  author  User?   @relation(fields: [createdBy], references: [id])
 
+  @@index([companyId])
   @@map("style_examples")
 }
 
@@ -175,11 +238,19 @@ model PostVersion {
   renderedArtUrl   String?  @map("rendered_art_url")
   /** Exatamente 2 sugestões de busca de imagem geradas pela IA (ex.: ["viatura polícia MG", "arma sobre mesa"]). Auxiliar — nunca seleciona nem publica foto sozinha. */
   imageSuggestions Json?    @map("image_suggestions")
+  /** Vídeo original escolhido (post de vídeo, em vez de foto). */
+  selectedVideoId  String?  @map("selected_video_id") @db.Uuid
+  /**
+   * Vídeo final já renderizado (texto com animação de entrada/saída
+   * gravado nos frames) — é ESTE que vai pro Instagram, nunca o original.
+   */
+  renderedVideoUrl String?  @map("rendered_video_url")
   editedBy         String?  @map("edited_by") @db.Uuid
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   post          Post             @relation(fields: [postId], references: [id], onDelete: Cascade)
   selectedPhoto PostPhoto?       @relation(fields: [selectedPhotoId], references: [id])
+  selectedVideo PostVideo?       @relation(fields: [selectedVideoId], references: [id])
   artTemplate   ArtTemplate?     @relation(fields: [artTemplateId], references: [id])
   editor        User?            @relation(fields: [editedBy], references: [id])
   decisions     ReviewDecision[]
@@ -231,6 +302,8 @@ model Publication {
 model PostAuditLog {
   id          String    @id @default(uuid()) @db.Uuid
   postId      String    @map("post_id") @db.Uuid
+  /** Sem relation pra Company de propósito (mesmo motivo do post: só filtra o log por empresa). */
+  companyId   String    @map("company_id") @db.Uuid
   title       String?
   /** Status do post no momento em que foi apagado ('published' | 'in_review' | 'failed'). */
   status      String
@@ -240,18 +313,23 @@ model PostAuditLog {
   purgedAt    DateTime  @default(now()) @map("purged_at") @db.Timestamptz(6)
 
   @@index([purgedAt])
+  @@index([companyId])
   @@map("post_audit_log")
 }
 
 /**
- * Configuração global do app — linha única (id sempre 1). Por ora só guarda
- * se a revisão por pares/editor é obrigatória antes de publicar; desligada,
- * o post publica direto assim que a arte é salva, sem passar por "em revisão".
+ * Configuração por empresa — 1 linha por company (era global antes do
+ * multi-tenant). Por ora só guarda se a revisão por pares/editor é
+ * obrigatória antes de publicar; desligada, o post publica direto assim que
+ * a arte é salva, sem passar por "em revisão".
  */
 model AppSettings {
-  id             Int      @id @default(1)
+  id             String   @id @default(uuid()) @db.Uuid
+  companyId      String   @unique @map("company_id") @db.Uuid
   reviewRequired Boolean  @default(true) @map("review_required")
   updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  company Company @relation(fields: [companyId], references: [id])
 
   @@map("app_settings")
 }

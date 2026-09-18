@@ -14,6 +14,8 @@ export interface SessionPayload extends JWTPayload {
   name: string;
   email: string;
   role: UserRole;
+  /** Nulo até o onboarding (ver /onboarding) — middleware usa isso pra redirecionar. */
+  companyId: string | null;
 }
 
 function secretKey(): Uint8Array {
@@ -25,6 +27,7 @@ export interface SessionInput {
   name: string;
   email: string;
   role: UserRole;
+  companyId: string | null;
 }
 
 export async function signSession(payload: SessionInput): Promise<string> {

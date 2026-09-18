@@ -1,5 +1,5 @@
 import { type NextRequest } from "next/server";
-import { requireUser } from "@/lib/auth";
+import { requireCompanyUser } from "@/lib/auth";
 import { regenerateSchema } from "@/lib/validation";
 import { regeneratePost } from "@/lib/services/posts";
 import { ok, route } from "@/lib/http";
@@ -10,7 +10,7 @@ export const maxDuration = 60;
 // POST /posts/:id/regenerate — novo ciclo de IA (nova versão, mesmas fotos)
 export const POST = route(
   async (req: NextRequest, ctx: { params: Promise<{ id: string }> }) => {
-    const user = await requireUser();
+    const user = await requireCompanyUser();
     const { id } = await ctx.params;
     const body = regenerateSchema.parse(await req.json().catch(() => ({})));
     const result = await regeneratePost(user, id, body);

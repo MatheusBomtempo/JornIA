@@ -1,14 +1,20 @@
 import { type NextRequest } from "next/server";
-import { requireUser } from "@/lib/auth";
+import { requireCompanyUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { styleExampleSchema } from "@/lib/validation";
-import { ok, route } from "@/lib/http";
+import { notFound, ok, route } from "@/lib/http";
+
+async function assertOwnedExample(id: string, companyId: string) {
+  const example = await prisma.styleExample.findUnique({ where: { id }, select: { companyId: true } });
+  if (!example || example.companyId !== companyId) throw notFound("Exemplo não encontrado.");
+}
 
 // PATCH /style-examples/:id — edita um exemplo (qualquer papel autenticado)
 export const PATCH = route(
   async (req: NextRequest, ctx: { params: Promise<{ id: string }> }) => {
-    await requireUser();
+    const user = await requireCompanyUser();
     const { id } = await ctx.params;
+    await assertOwnedExample(id, user.companyId);
     const data = styleExampleSchema.parse(await req.json());
 
     const example = await prisma.styleExample.update({
@@ -26,8 +32,9 @@ export const PATCH = route(
 // DELETE /style-examples/:id — remove um exemplo (qualquer papel autenticado)
 export const DELETE = route(
   async (_req: NextRequest, ctx: { params: Promise<{ id: string }> }) => {
-    await requireUser();
+    const user = await requireCompanyUser();
     const { id } = await ctx.params;
+    await assertOwnedExample(id, user.companyId);
     await prisma.styleExample.delete({ where: { id } });
     return ok({ ok: true });
   },

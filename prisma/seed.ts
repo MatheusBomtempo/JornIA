@@ -50,17 +50,27 @@ async function putSeedAsset(
   return `${base}/uploads/${key}`;
 }
 
+/** Só existe 1 empresa no seed (sem chave natural pra upsert) — cria se não houver nenhuma. */
+async function ensureCompany(name: string) {
+  const existing = await prisma.company.findFirst();
+  if (existing) return existing;
+  const company = await prisma.company.create({ data: { name } });
+  console.log(`  empresa criada: ${name}`);
+  return company;
+}
+
 async function ensureUser(
   name: string,
   email: string,
   password: string,
   role: "admin" | "manager" | "staff",
+  companyId: string | null,
 ) {
   const passwordHash = await bcrypt.hash(password, 10);
   const user = await prisma.user.upsert({
     where: { email },
-    update: { name, role },
-    create: { name, email, role, passwordHash },
+    update: { name, role, companyId },
+    create: { name, email, role, passwordHash, companyId },
   });
   console.log(`  usuário ${role}: ${email} / ${password}`);
   return user;
@@ -114,27 +124,45 @@ function slotsFor(w: number, h: number) {
 async function main() {
   console.log("Seed do JornAI…");
 
+  // Em produção, o admin fica SEM empresa de propósito: quem faz o deploy
+  // cadastra a própria empresa (nome, logo, @) no primeiro login, em vez de
+  // herdar um "Minha Empresa" genérico que não dá pra editar depois (ver
+  // /onboarding). Em dev/demo, cria uma empresa de exemplo pra já poder
+  // testar o fluxo inteiro sem passo extra nenhum.
+  const isProd = process.env.NODE_ENV === "production";
+  const company = isProd ? null : await ensureCompany("Jornal Exemplo");
+
   const admin = await ensureUser(
     "Admin",
     process.env.SEED_ADMIN_EMAIL ?? "admin@jornai.local",
     process.env.SEED_ADMIN_PASSWORD ?? "admin12345",
     "admin",
+    company?.id ?? null,
   );
+  if (isProd) {
+    console.log("  sem empresa ainda — cadastre em /onboarding no primeiro login");
+  }
   // Contas de exemplo com senha fixa no código-fonte (que é público) — só
   // fazem sentido em dev local. Pular em produção evita deixar login válido
   // documentado no repo aberto pra qualquer um.
-  if (process.env.NODE_ENV !== "production") {
-    await ensureUser("Editor Exemplo", "editor@jornai.local", "editor12345", "manager");
-    await ensureUser("Jornalista Exemplo", "reporter@jornai.local", "reporter123", "staff");
-  } else {
+  if (!isProd && company) {
+    await ensureUser("Editor Exemplo", "editor@jornai.local", "editor12345", "manager", company.id);
+    await ensureUser("Jornalista Exemplo", "reporter@jornai.local", "reporter123", "staff", company.id);
+  } else if (isProd) {
     console.log("  contas de exemplo (editor/repórter): puladas em produção");
   }
 
+  if (!company) {
+    console.log("Seed concluído ✔ (templates/exemplos de estilo ficam pro onboarding)");
+    return;
+  }
+
   // ── Exemplos de estilo (posts reais do jornal) ─────────────
-  if ((await prisma.styleExample.count()) === 0) {
+  if ((await prisma.styleExample.count({ where: { companyId: company.id } })) === 0) {
     await prisma.styleExample.createMany({
       data: [
         {
+          companyId: company.id,
           orderIndex: 0,
           createdBy: admin.id,
           title: "Tragédia em BH: acidente entre motos deixa dois mortos",
@@ -149,6 +177,7 @@ As duas vítimas não resistiram aos ferimentos e morreram no local. Equipes de 
 #BH #Acidente`,
         },
         {
+          companyId: company.id,
           orderIndex: 1,
           createdBy: admin.id,
           title:
@@ -186,6 +215,7 @@ A cartilha foi lançada durante o 70º Congresso Brasileiro de Oftalmologia, em 
   ]) {
     const overlayUrl = await ensureOverlay(f.w, f.h, f.file);
     const data = {
+      companyId: company.id,
       name: f.name,
       canvasWidth: f.w,
       canvasHeight: f.h,
@@ -194,7 +224,9 @@ A cartilha foi lançada durante o 70º Congresso Brasileiro de Oftalmologia, em 
       ...slotsFor(f.w, f.h),
     };
 
-    const existing = await prisma.artTemplate.findFirst({ where: { name: f.name } });
+    const existing = await prisma.artTemplate.findFirst({
+      where: { name: f.name, companyId: company.id },
+    });
     if (existing) {
       await prisma.artTemplate.update({ where: { id: existing.id }, data });
       console.log(`  template atualizado: ${f.name}`);

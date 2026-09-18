@@ -8,6 +8,7 @@ import { localeFromAcceptLanguage, localeFromCountry } from "./lib/i18n/detect";
  * voltar pro /login. As rotas de API cuidam da própria auth (requireUser).
  */
 const PUBLIC_PATHS = ["/login"];
+const ONBOARDING_PATH = "/onboarding";
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -15,6 +16,12 @@ export async function middleware(req: NextRequest) {
   const session = await verifySession(token);
 
   const isPublic = PUBLIC_PATHS.some((p) => pathname.startsWith(p));
+  const isOnboarding = pathname.startsWith(ONBOARDING_PATH);
+  // `undefined` = cookie assinado antes deste campo existir (sessão antiga);
+  // trata como "tem empresa" até a pessoa logar de novo — só `null` (claim
+  // explícita, sessão nova) força o onboarding. Evita deslogar/travar quem
+  // já estava com sessão válida quando este campo foi introduzido.
+  const missingCompany = session?.companyId === null;
 
   let response: NextResponse;
 
@@ -24,6 +31,18 @@ export async function middleware(req: NextRequest) {
     url.searchParams.set("next", pathname);
     response = NextResponse.redirect(url);
   } else if (session && isPublic) {
+    const url = req.nextUrl.clone();
+    url.pathname = missingCompany ? ONBOARDING_PATH : "/dashboard";
+    url.search = "";
+    response = NextResponse.redirect(url);
+  } else if (session && missingCompany && !isOnboarding) {
+    // Primeiro login do admin sem empresa ainda: só o onboarding é alcançável.
+    const url = req.nextUrl.clone();
+    url.pathname = ONBOARDING_PATH;
+    url.search = "";
+    response = NextResponse.redirect(url);
+  } else if (session && !missingCompany && isOnboarding) {
+    // Já tem empresa — onboarding não faz mais sentido.
     const url = req.nextUrl.clone();
     url.pathname = "/dashboard";
     url.search = "";

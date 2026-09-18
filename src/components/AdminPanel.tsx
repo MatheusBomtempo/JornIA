@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiGet, apiPost, apiPatch, apiDelete } from "@/lib/api-client";
 import { USER_ROLES, type UserRole } from "@/lib/domain";
 import { TemplateBuilder } from "./TemplateBuilder";
 import { Tooltip } from "./Tooltip";
 import { useLocale } from "./LocaleProvider";
 
-type Tab = "style" | "templates" | "users" | "keys" | "settings";
+type Tab = "style" | "templates" | "users" | "keys" | "settings" | "company" | "balance";
 
 export function AdminPanel({ role }: { role: UserRole }) {
   const { dict } = useLocale();
@@ -20,7 +20,9 @@ export function AdminPanel({ role }: { role: UserRole }) {
     { id: "templates", label: dict.adminPanel.tabs.templates, show: true },
     { id: "users", label: dict.adminPanel.tabs.users, show: canManageUsers },
     { id: "keys", label: dict.adminPanel.tabs.apiKeys, show: isAdmin },
+    { id: "company", label: dict.adminPanel.tabs.company, show: isAdmin },
     { id: "settings", label: dict.adminPanel.tabs.settings, show: isAdmin },
+    { id: "balance", label: dict.adminPanel.tabs.balance, show: isAdmin },
   ];
 
   return (
@@ -49,7 +51,9 @@ export function AdminPanel({ role }: { role: UserRole }) {
       {tab === "templates" && <TemplatesSection />}
       {tab === "users" && canManageUsers && <UsersSection canPromoteAdmin={isAdmin} />}
       {tab === "keys" && isAdmin && <KeysSection />}
+      {tab === "company" && isAdmin && <CompanySection />}
       {tab === "settings" && isAdmin && <SettingsSection />}
+      {tab === "balance" && isAdmin && <BalanceSection />}
     </div>
   );
 }
@@ -532,6 +536,151 @@ function KeysSection() {
   );
 }
 
+// ── Empresa (nome, logo, @) ──────────────────────────────────
+interface CompanyInfo {
+  name: string;
+  logoUrl: string | null;
+  instagramHandle: string | null;
+}
+
+const MAX_LOGO_MB = 5;
+
+/**
+ * A logo entra na prévia do Instagram e é gravada no rodapé do vídeo
+ * renderizado — é o mesmo campo definido no onboarding, editável aqui depois.
+ */
+function CompanySection() {
+  const { dict } = useLocale();
+  const t = dict.adminPanel.companySection;
+  const [company, setCompany] = useState<CompanyInfo | null>(null);
+  const [name, setName] = useState("");
+  const [handle, setHandle] = useState("");
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    apiGet<{ company: CompanyInfo | null }>("/api/companies").then((d) => {
+      if (!d.company) return;
+      setCompany(d.company);
+      setName(d.company.name);
+      setHandle(d.company.instagramHandle ?? "");
+      setLogoUrl(d.company.logoUrl);
+    });
+  }, []);
+
+  async function pickLogo(file: File | undefined | null) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setError(t.invalidLogoType);
+      return;
+    }
+    if (file.size > MAX_LOGO_MB * 1024 * 1024) {
+      setError(`${t.logoTooLargePrefix} ${MAX_LOGO_MB}MB.`);
+      return;
+    }
+    setError(null);
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("kind", "overlay"); // preserva transparência — sem recompressão
+      const { url } = await apiPost<{ url: string }>("/api/upload", fd);
+      setLogoUrl(url);
+      setSaved(false);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function save() {
+    setBusy(true);
+    setError(null);
+    try {
+      const { company: updated } = await apiPatch<{ company: CompanyInfo }>("/api/companies", {
+        name: name.trim(),
+        logoUrl,
+        instagramHandle: handle.trim() || null,
+      });
+      setCompany(updated);
+      setHandle(updated.instagramHandle ?? "");
+      setSaved(true);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!company) return null;
+
+  return (
+    <div className="max-w-xl space-y-4">
+      <div className="card space-y-4 p-4">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => logoInputRef.current?.click()}
+            disabled={busy}
+            className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed border-line bg-elevated text-2xl text-faint transition-colors hover:border-brand-500/60"
+            title={t.logoPickTitle}
+          >
+            {logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={logoUrl} alt="" className="h-full w-full object-contain" />
+            ) : (
+              <span aria-hidden>🏢</span>
+            )}
+          </button>
+          <div className="min-w-0">
+            <p className="text-sm font-medium">{t.logoLabel}</p>
+            <p className="hint mt-0">{t.logoHint}</p>
+          </div>
+          <input
+            ref={logoInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            className="hidden"
+            onChange={(e) => pickLogo(e.target.files?.[0])}
+          />
+        </div>
+
+        <div>
+          <label className="label" htmlFor="company-name-admin">{t.nameLabel}</label>
+          <input
+            id="company-name-admin"
+            className="input"
+            value={name}
+            onChange={(e) => { setName(e.target.value); setSaved(false); }}
+          />
+        </div>
+
+        <div>
+          <label className="label" htmlFor="company-handle-admin">{t.handleLabel}</label>
+          <input
+            id="company-handle-admin"
+            className="input"
+            value={handle}
+            placeholder="@seujornal"
+            onChange={(e) => { setHandle(e.target.value); setSaved(false); }}
+          />
+        </div>
+
+        {error && <p className="alert-error">{error}</p>}
+        {saved && <p className="alert-success">✅ {t.saved}</p>}
+
+        <button className="btn-primary" onClick={save} disabled={busy || !name.trim()}>
+          {busy ? dict.common.saving : dict.common.save}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Configurações gerais ─────────────────────────────────────
 interface AppSettings {
   reviewRequired: boolean;
@@ -597,6 +746,234 @@ function SettingsSection() {
         </button>
       </div>
       {saving && <p className="hint">{t.savingLabel}</p>}
+      {error && <p className="alert-error">{error}</p>}
+    </div>
+  );
+}
+
+// ── Saldo de IA (créditos no OpenRouter) ─────────────────────
+interface AiBalance {
+  provider: "openrouter";
+  totalCredits: number;
+  totalUsage: number;
+  remaining: number;
+  key: {
+    label: string;
+    usage: number;
+    usageDaily: number;
+    usageWeekly: number;
+    usageMonthly: number;
+    limit: number | null;
+    limitRemaining: number | null;
+    isFreeTier: boolean;
+    freeModelDailyRequests: { used: number; limit: number; remaining: number } | null;
+  };
+  fetchedAt: string;
+}
+
+type AiBalanceResult =
+  | { supported: true; balance: AiBalance; cached: boolean }
+  | { supported: false; provider: string };
+
+const OPENROUTER_CREDITS_URL = "https://openrouter.ai/settings/credits";
+// Abaixo disso o painel avisa — um post custa centavos, mas quem recarrega
+// é o admin e ele não olha aqui todo dia.
+const LOW_BALANCE_RATIO = 0.2;
+const LOW_BALANCE_USD = 1;
+
+/**
+ * Lê o saldo direto na API do OpenRouter (ver services/ai-balance.ts). A
+ * chave é global da instalação, então o saldo é o mesmo pra toda empresa.
+ */
+function BalanceSection() {
+  const { dict, locale } = useLocale();
+  const t = dict.adminPanel.balanceSection;
+  const intlLocale = locale === "pt" ? "pt-BR" : "en-US";
+  const [result, setResult] = useState<AiBalanceResult | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = async (fresh = false) => {
+    setLoading(true);
+    setError(null);
+    try {
+      setResult(await apiGet<AiBalanceResult>(`/api/ai-balance${fresh ? "?fresh=1" : ""}`));
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => {
+    load();
+  }, []);
+
+  // USD com precisão que acompanha o valor: $4.90 no saldo, mas $0.0011 no
+  // gasto de hoje — com 2 casas o consumo diário apareceria como "$0.00".
+  const usd = (v: number) =>
+    new Intl.NumberFormat(intlLocale, {
+      style: "currency",
+      currency: "USD",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: v !== 0 && Math.abs(v) < 0.01 ? 4 : 2,
+    }).format(v);
+  const pct = (v: number) =>
+    new Intl.NumberFormat(intlLocale, { style: "percent", maximumFractionDigits: 0 }).format(v);
+
+  if (!result && loading) return <p className="text-sm text-muted">{t.loading}</p>;
+  if (error && !result) return <p className="alert-error">{error}</p>;
+  if (!result) return null;
+
+  if (!result.supported) {
+    return (
+      <div className="max-w-2xl">
+        <div className="alert-info">
+          {t.unsupportedPrefix}
+          <code className="rounded bg-bg px-1.5 py-0.5 text-xs">{result.provider}</code>
+          {t.unsupportedSuffix}
+        </div>
+      </div>
+    );
+  }
+
+  const { balance: b, cached } = result;
+  const usedRatio = b.totalCredits > 0 ? Math.min(1, b.totalUsage / b.totalCredits) : 1;
+  const remainingRatio = 1 - usedRatio;
+  const empty = b.remaining <= 0;
+  const low = !empty && (remainingRatio < LOW_BALANCE_RATIO || b.remaining < LOW_BALANCE_USD);
+  // O preenchimento do medidor carrega a severidade; a trilha é um degrau
+  // mais claro da mesma cor, pra barra inteira ler o estado.
+  const meter = empty
+    ? { fill: "bg-red-500", track: "bg-red-500/15", text: "text-red-300" }
+    : low
+      ? { fill: "bg-amber-500", track: "bg-amber-500/15", text: "text-amber-300" }
+      : { fill: "bg-emerald-500", track: "bg-emerald-500/15", text: "text-emerald-300" };
+  const fetchedAt = new Date(b.fetchedAt).toLocaleTimeString(intlLocale, {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  const tiles = [
+    { label: t.today, value: b.key.usageDaily },
+    { label: t.week, value: b.key.usageWeekly },
+    { label: t.month, value: b.key.usageMonthly },
+    { label: t.total, value: b.key.usage },
+  ];
+
+  return (
+    <div className="max-w-2xl space-y-4">
+      {empty && <p className="alert-error">{t.emptyBalanceWarning}</p>}
+      {low && (
+        <p className="rounded-xl border border-amber-500/25 bg-amber-500/10 px-3.5 py-2.5 text-sm text-amber-300">
+          {t.lowBalanceWarning}
+        </p>
+      )}
+
+      {/* Número-herói: o saldo que sobra */}
+      <div className="card space-y-4 p-5">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-faint">
+            {t.heroLabel}
+          </p>
+          <p className={`mt-1 text-5xl font-semibold leading-none tracking-tight ${meter.text}`}>
+            {usd(b.remaining)}
+          </p>
+          <p className="mt-2 text-sm text-muted">
+            {t.ofPurchasedPrefix}
+            <span className="text-ink">{usd(b.totalCredits)}</span>
+            {t.ofPurchasedSuffix} · {t.usedPrefix}
+            <span className="text-ink">{usd(b.totalUsage)}</span>
+            {t.usedSuffix}
+          </p>
+        </div>
+
+        <div>
+          <div className="mb-1.5 flex items-baseline justify-between text-xs">
+            <span className="text-faint">{t.meterLabel}</span>
+            <span className="tabular-nums text-muted">{pct(usedRatio)}</span>
+          </div>
+          <div
+            role="meter"
+            aria-label={t.meterLabel}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(usedRatio * 100)}
+            className={`h-2.5 w-full overflow-hidden rounded-full ${meter.track}`}
+          >
+            <div
+              className={`h-full rounded-full transition-[width] duration-500 ${meter.fill}`}
+              style={{ width: `${Math.max(usedRatio > 0 ? 1 : 0, usedRatio * 100)}%` }}
+            />
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-lineSoft pt-3">
+          <p className="text-xs text-faint">
+            {t.updatedAtPrefix}
+            {fetchedAt}
+            {cached ? t.cachedSuffix : ""}
+          </p>
+          <div className="flex gap-2">
+            <button className="btn-subtle btn-sm" onClick={() => load(true)} disabled={loading}>
+              {loading ? t.refreshing : t.refresh}
+            </button>
+            <a
+              className="btn-ghost btn-sm"
+              href={OPENROUTER_CREDITS_URL}
+              target="_blank"
+              rel="noreferrer noopener"
+            >
+              {t.addCredits} ↗
+            </a>
+          </div>
+        </div>
+      </div>
+
+      {/* Consumo desta chave (só o JornAI) */}
+      <div className="card space-y-3 p-4">
+        <div>
+          <h3 className="text-sm font-semibold">{t.keyTitle}</h3>
+          <p className="hint mb-0">{t.keyHint}</p>
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {tiles.map((tile) => (
+            <div key={tile.label} className="card-soft p-3">
+              <p className="text-[11px] text-faint">{tile.label}</p>
+              <p className="mt-0.5 text-lg font-semibold text-ink">{usd(tile.value)}</p>
+            </div>
+          ))}
+        </div>
+        {b.key.limit !== null && (
+          <p className="text-xs text-muted">
+            {t.keyLimitPrefix}
+            <span className="text-ink">{usd(b.key.limit)}</span>
+            {b.key.limitRemaining !== null && (
+              <>
+                {t.keyLimitRemainingPrefix}
+                <span className="text-ink">{usd(b.key.limitRemaining)}</span>
+              </>
+            )}
+          </p>
+        )}
+      </div>
+
+      {/* Cota diária dos modelos gratuitos (3º elo da corrente) */}
+      {b.key.freeModelDailyRequests && (
+        <div className="card flex items-center justify-between gap-4 p-4">
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold">{t.freeRequestsTitle}</h3>
+            <p className="hint mb-0">{t.freeRequestsHint}</p>
+          </div>
+          <p className="shrink-0 text-lg font-semibold tabular-nums text-ink">
+            {b.key.freeModelDailyRequests.used}
+            <span className="text-sm font-normal text-faint">
+              {" / "}
+              {b.key.freeModelDailyRequests.limit}
+            </span>
+          </p>
+        </div>
+      )}
+
       {error && <p className="alert-error">{error}</p>}
     </div>
   );

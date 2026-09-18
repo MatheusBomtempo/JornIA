@@ -18,6 +18,8 @@ import { artEditor } from "./dictionaries/artEditor";
 import { adminPanel } from "./dictionaries/adminPanel";
 import { postWorkspace } from "./dictionaries/postWorkspace";
 import { cardQuickActions } from "./dictionaries/cardQuickActions";
+import { videoEditor } from "./dictionaries/videoEditor";
+import { onboarding } from "./dictionaries/onboarding";
 
 const dictionaries = {
   pt: {
@@ -40,6 +42,8 @@ const dictionaries = {
     adminPanel: adminPanel.pt,
     postWorkspace: postWorkspace.pt,
     cardQuickActions: cardQuickActions.pt,
+    videoEditor: videoEditor.pt,
+    onboarding: onboarding.pt,
   },
   en: {
     common: common.en,
@@ -61,6 +65,8 @@ const dictionaries = {
     adminPanel: adminPanel.en,
     postWorkspace: postWorkspace.en,
     cardQuickActions: cardQuickActions.en,
+    videoEditor: videoEditor.en,
+    onboarding: onboarding.en,
   },
 } satisfies Record<Locale, unknown>;
 

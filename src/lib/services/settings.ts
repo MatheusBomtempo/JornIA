@@ -1,19 +1,19 @@
 import "server-only";
 import { prisma } from "../db";
 
-/** Linha única (id 1) — cria com os padrões na primeira leitura/escrita. */
-export function getAppSettings() {
+/** 1 linha por empresa — cria com os padrões na primeira leitura/escrita. */
+export function getAppSettings(companyId: string) {
   return prisma.appSettings.upsert({
-    where: { id: 1 },
+    where: { companyId },
     update: {},
-    create: { id: 1 },
+    create: { companyId },
   });
 }
 
-export function updateAppSettings(input: { reviewRequired: boolean }) {
+export function updateAppSettings(companyId: string, input: { reviewRequired: boolean }) {
   return prisma.appSettings.upsert({
-    where: { id: 1 },
+    where: { companyId },
     update: input,
-    create: { id: 1, ...input },
+    create: { companyId, ...input },
   });
 }

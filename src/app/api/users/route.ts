@@ -1,5 +1,5 @@
 import { type NextRequest } from "next/server";
-import { requireUser, generateTempPassword, hashPassword } from "@/lib/auth";
+import { requireCompanyUser, generateTempPassword, hashPassword } from "@/lib/auth";
 import { requireRole } from "@/lib/rbac";
 import { sendCredentialsEmail } from "@/lib/email";
 import { prisma } from "@/lib/db";
@@ -8,9 +8,10 @@ import { conflict, created, forbidden, ok, route } from "@/lib/http";
 
 // GET /users — manager/admin listam usuários
 export const GET = route(async () => {
-  const user = await requireUser();
+  const user = await requireCompanyUser();
   requireRole(user, "manager", "admin");
   const users = await prisma.user.findMany({
+    where: { companyId: user.companyId },
     orderBy: { createdAt: "desc" },
     select: {
       id: true,
@@ -31,7 +32,7 @@ export const GET = route(async () => {
 // (login automático) — quem cria nunca digita nem vê a senha. A pessoa troca
 // por uma própria depois de entrar (ver /api/auth/change-password).
 export const POST = route(async (req: NextRequest) => {
-  const actor = await requireUser();
+  const actor = await requireCompanyUser();
   requireRole(actor, "manager", "admin");
   const data = createUserSchema.parse(await req.json());
 
@@ -48,6 +49,7 @@ export const POST = route(async (req: NextRequest) => {
       name: data.name,
       email: data.email,
       role: data.role,
+      companyId: actor.companyId,
       passwordHash: await hashPassword(tempPassword),
     },
     select: { id: true, name: true, email: true, role: true, active: true },

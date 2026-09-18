@@ -4,7 +4,8 @@ import { generatePostContent } from "../ai";
 import { scrapeUrl } from "../scrape";
 import { compactSource } from "../compact";
 import { renderAndStore } from "../render";
-import { publishToInstagram } from "../instagram";
+import { renderVideoAndStore, extractAndStoreMiddleFrame } from "../render/video";
+import { publishToInstagram, publishVideoToInstagram } from "../instagram";
 import { canEditPost, canReviewPost, can } from "../rbac";
 import { purgePostsWithMedia } from "./retention";
 import { getAppSettings } from "./settings";
@@ -14,18 +15,25 @@ import type { z } from "zod";
 import type {
   createPostSchema,
   saveArtSchema,
+  saveVideoSchema,
   regenerateSchema,
   editVersionSchema,
   addPhotoSchema,
+  addVideoSchema,
 } from "../validation";
 import type { User, PostVersion } from "@prisma/client";
 import type { CompactResult } from "../compact";
 
 type CreatePostInput = z.infer<typeof createPostSchema>;
 type SaveArtInput = z.infer<typeof saveArtSchema>;
+type SaveVideoInput = z.infer<typeof saveVideoSchema>;
 type RegenerateInput = z.infer<typeof regenerateSchema>;
 type EditVersionInput = z.infer<typeof editVersionSchema>;
 type AddPhotoInput = z.infer<typeof addPhotoSchema>;
+type AddVideoInput = z.infer<typeof addVideoSchema>;
+
+/** Todo serviço de post exige empresa — ver requireCompanyUser() em lib/auth.ts. */
+type CompanyUser = User & { companyId: string };
 
 async function nextVersionNumber(postId: string): Promise<number> {
   const last = await prisma.postVersion.findFirst({
@@ -45,8 +53,19 @@ async function latestVersion(postId: string): Promise<PostVersion> {
   return v;
 }
 
+/**
+ * Toda função abaixo que recebe um postId busca o post e chama isto antes de
+ * ler canEditPost/canReviewPost — impede que alguém de outra empresa
+ * edite/aprove/apague um post só por adivinhar o UUID (canEditPost/
+ * canReviewPost checam papel e autoria, não empresa). 404 em vez de 403 de
+ * propósito: não revela nem a existência do post pra quem é de outra empresa.
+ */
+function assertSameCompany(postCompanyId: string, userCompanyId: string): void {
+  if (postCompanyId !== userCompanyId) throw notFound("Post não encontrado.");
+}
+
 // ── 1) Criar post + pipeline de IA (só texto) ────────────────
-export async function createPostWithAi(user: User, input: CreatePostInput) {
+export async function createPostWithAi(user: CompanyUser, input: CreatePostInput) {
   let sourceText = input.text ?? null;
 
   // Material de apoio: link raspado e/ou documento anexado (PDF/txt) —
@@ -86,6 +105,7 @@ export async function createPostWithAi(user: User, input: CreatePostInput) {
 
   const post = await prisma.post.create({
     data: {
+      companyId: user.companyId,
       createdBy: user.id,
       sourceType,
       sourceText,
@@ -146,14 +166,15 @@ export async function createPostWithAi(user: User, input: CreatePostInput) {
   return getPostDetail(post.id);
 }
 
-// ── 2) Salvar arte + render final ────────────────────────────
+// ── 2) Salvar arte + render final (foto) ─────────────────────
 export async function saveArtAndRender(
-  user: User,
+  user: CompanyUser,
   postId: string,
   input: SaveArtInput,
 ) {
   const post = await prisma.post.findUnique({ where: { id: postId } });
   if (!post) throw notFound("Post não encontrado.");
+  assertSameCompany(post.companyId, user.companyId);
   if (!canEditPost(user, post)) throw forbidden("Você não pode editar este post.");
 
   const [photo, template, version] = await Promise.all([
@@ -162,7 +183,9 @@ export async function saveArtAndRender(
     latestVersion(postId),
   ]);
   if (!photo || photo.postId !== postId) throw badRequest("Foto inválida.");
-  if (!template) throw badRequest("Template inválido.");
+  if (!template || template.companyId !== user.companyId) {
+    throw badRequest("Template inválido.");
+  }
 
   const renderedArtUrl = await renderAndStore(
     {
@@ -197,19 +220,73 @@ export async function saveArtAndRender(
     },
   });
 
-  // Com o fluxo de revisão desligado no admin, a arte pronta já publica
-  // direto — ninguém precisa aprovar. Ligado (padrão), segue pro "em revisão".
-  const settings = await getAppSettings();
+  await advanceAfterRender(post.companyId, postId, updatedVersion);
+  return getPostDetail(postId);
+}
+
+// ── 2v) Salvar vídeo + render final (texto animado) ──────────
+export async function saveVideoAndRender(
+  user: CompanyUser,
+  postId: string,
+  input: SaveVideoInput,
+) {
+  const post = await prisma.post.findUnique({ where: { id: postId } });
+  if (!post) throw notFound("Post não encontrado.");
+  assertSameCompany(post.companyId, user.companyId);
+  if (!canEditPost(user, post)) throw forbidden("Você não pode editar este post.");
+
+  const [video, version, company] = await Promise.all([
+    prisma.postVideo.findUnique({ where: { id: input.selectedVideoId } }),
+    latestVersion(postId),
+    prisma.company.findUnique({ where: { id: post.companyId } }),
+  ]);
+  if (!video || video.postId !== postId) throw badRequest("Vídeo inválido.");
+
+  const renderedVideoUrl = await renderVideoAndStore(
+    {
+      videoUrl: video.storageUrl,
+      title: input.title,
+      logoUrl: company?.logoUrl,
+      titleOffsetY: input.titleOffsetY,
+    },
+    `video/${postId}/v${version.versionNumber}-${Date.now()}.mp4`,
+  );
+
+  const updatedVersion = await prisma.postVersion.update({
+    where: { id: version.id },
+    data: {
+      selectedVideoId: video.id,
+      title: input.title,
+      // Mesmo campo que a foto usa pro deslocamento do título — aqui só o Y.
+      titleOffset: { offsetX: 0, offsetY: input.titleOffsetY ?? 0 },
+      renderedVideoUrl,
+      editedBy: user.id,
+    },
+  });
+
+  await advanceAfterRender(post.companyId, postId, updatedVersion);
+  return getPostDetail(postId);
+}
+
+/**
+ * Depois que a arte/vídeo final está pronta: com o fluxo de revisão
+ * desligado no admin, publica direto — ninguém precisa aprovar. Ligado
+ * (padrão), segue pro "em revisão". Compartilhado por foto e vídeo.
+ */
+async function advanceAfterRender(
+  companyId: string,
+  postId: string,
+  version: PostVersion,
+): Promise<void> {
+  const settings = await getAppSettings(companyId);
   if (settings.reviewRequired) {
     await prisma.post.update({
       where: { id: postId },
       data: { status: POST_STATUS.IN_REVIEW },
     });
   } else {
-    await publishVersion(postId, updatedVersion);
+    await publishVersion(postId, version);
   }
-
-  return getPostDetail(postId);
 }
 
 // ── 2b) Anexar foto extra a um post já criado ────────────────
@@ -221,7 +298,7 @@ export async function saveArtAndRender(
  * manual, no editor de arte.
  */
 export async function addPhotoToPost(
-  user: User,
+  user: CompanyUser,
   postId: string,
   input: AddPhotoInput,
 ) {
@@ -230,6 +307,7 @@ export async function addPhotoToPost(
     include: { _count: { select: { photos: true } } },
   });
   if (!post) throw notFound("Post não encontrado.");
+  assertSameCompany(post.companyId, user.companyId);
   if (!canEditPost(user, post)) throw forbidden("Você não pode editar este post.");
 
   const photo = await prisma.postPhoto.create({
@@ -243,14 +321,60 @@ export async function addPhotoToPost(
   return { photo, post: await getPostDetail(postId) };
 }
 
+// ── 2c) Anexar vídeo extra a um post já criado ───────────────
+export async function addVideoToPost(
+  user: CompanyUser,
+  postId: string,
+  input: AddVideoInput,
+) {
+  const post = await prisma.post.findUnique({
+    where: { id: postId },
+    include: { _count: { select: { videos: true } } },
+  });
+  if (!post) throw notFound("Post não encontrado.");
+  assertSameCompany(post.companyId, user.companyId);
+  if (!canEditPost(user, post)) throw forbidden("Você não pode editar este post.");
+
+  // Frame do meio já no enquadramento final (9:16): é o fundo do preview no
+  // editor, e o probe diz quanto o corte 9:16 vai comer das laterais. Se
+  // falhar, o vídeo entra assim mesmo — o editor só fica sem o preview.
+  let previewFrameUrl: string | null = null;
+  let probe: { durationSec: number; width: number; height: number } | null = null;
+  try {
+    const frame = await extractAndStoreMiddleFrame(
+      input.storageUrl,
+      `video/${postId}/frames/${Date.now()}.jpg`,
+    );
+    previewFrameUrl = frame.url;
+    probe = frame.probe;
+  } catch (err) {
+    console.error("[JornAI] Falha ao extrair frame de preview do vídeo:", err);
+  }
+
+  const video = await prisma.postVideo.create({
+    data: {
+      postId,
+      storageUrl: input.storageUrl,
+      durationMs: probe ? Math.round(probe.durationSec * 1000) : input.durationMs,
+      previewFrameUrl,
+      width: probe?.width,
+      height: probe?.height,
+      orderIndex: post._count.videos,
+    },
+  });
+
+  return { video, post: await getPostDetail(postId) };
+}
+
 // ── 3) Regenerar (novo ciclo de IA, nova versão) ─────────────
 export async function regeneratePost(
-  user: User,
+  user: CompanyUser,
   postId: string,
   input: RegenerateInput,
 ) {
   const post = await prisma.post.findUnique({ where: { id: postId } });
   if (!post) throw notFound("Post não encontrado.");
+  assertSameCompany(post.companyId, user.companyId);
   // staff pode refazer as próprias; manager/admin qualquer uma; um colega
   // (revisor por pares) também pode pedir reescrita na pauta de outro staff.
   if (!canEditPost(user, post) && !canReviewPost(user, post)) {
@@ -289,14 +413,13 @@ export async function regeneratePost(
       imageSuggestions: content.imageSuggestions.length
         ? content.imageSuggestions
         : undefined,
-      aiProvider: content.meta?.provider,
-      aiModel: content.meta?.model,
-      // carrega escolhas de arte da versão anterior (arte precisa ser re-renderizada)
+      // carrega escolhas de arte/vídeo da versão anterior (precisa ser re-renderizada)
       selectedPhotoId: prev.selectedPhotoId,
       artTemplateId: prev.artTemplateId,
       photoTransform: prev.photoTransform ?? undefined,
       titleOffset: prev.titleOffset ?? undefined,
       subtitleOffset: prev.subtitleOffset ?? undefined,
+      selectedVideoId: prev.selectedVideoId,
       editedBy: user.id,
     },
   });
@@ -323,13 +446,14 @@ export async function regeneratePost(
 
 // ── 4) Edição manual de texto (nova versão) ──────────────────
 export async function editVersionManually(
-  user: User,
+  user: CompanyUser,
   postId: string,
   versionId: string,
   input: EditVersionInput,
 ) {
   const post = await prisma.post.findUnique({ where: { id: postId } });
   if (!post) throw notFound("Post não encontrado.");
+  assertSameCompany(post.companyId, user.companyId);
   if (!canEditPost(user, post)) throw forbidden("Sem permissão para editar.");
 
   const source = await prisma.postVersion.findUnique({
@@ -358,6 +482,8 @@ export async function editVersionManually(
       titleOffset: source.titleOffset ?? undefined,
       subtitleOffset: source.subtitleOffset ?? undefined,
       renderedArtUrl: source.renderedArtUrl,
+      selectedVideoId: source.selectedVideoId,
+      renderedVideoUrl: source.renderedVideoUrl,
       editedBy: user.id,
     },
   });
@@ -394,6 +520,32 @@ export async function editVersionManually(
     }
   }
 
+  // Post de vídeo: título mudou -> o cartão animado precisa ser regravado.
+  let finalRenderedVideoUrl = version.renderedVideoUrl;
+  if (artChanged && version.selectedVideoId) {
+    const [video, company] = await Promise.all([
+      prisma.postVideo.findUnique({ where: { id: version.selectedVideoId } }),
+      prisma.company.findUnique({ where: { id: post.companyId } }),
+    ]);
+    if (video) {
+      const offset = version.titleOffset as { offsetY?: number } | null;
+      const url = await renderVideoAndStore(
+        {
+          videoUrl: video.storageUrl,
+          title: version.title ?? "",
+          logoUrl: company?.logoUrl,
+          titleOffsetY: offset?.offsetY ?? 0,
+        },
+        `video/${postId}/v${version.versionNumber}-${Date.now()}.mp4`,
+      );
+      await prisma.postVersion.update({
+        where: { id: version.id },
+        data: { renderedVideoUrl: url },
+      });
+      finalRenderedVideoUrl = url;
+    }
+  }
+
   if (can.review(user)) {
     await prisma.reviewDecision.create({
       data: {
@@ -404,29 +556,36 @@ export async function editVersionManually(
     });
   }
 
-  // Mesma regra do salvamento de arte: com revisão desligada e a arte já
-  // pronta, publica direto em vez de esperar em "em revisão".
-  const settings = await getAppSettings();
-  if (settings.reviewRequired || !finalRenderedArtUrl) {
+  // Mesma regra do salvamento de arte/vídeo: com revisão desligada e a mídia
+  // já pronta, publica direto em vez de esperar em "em revisão".
+  const settings = await getAppSettings(user.companyId);
+  const mediaReady = !!finalRenderedArtUrl || !!finalRenderedVideoUrl;
+  if (settings.reviewRequired || !mediaReady) {
     await prisma.post.update({
       where: { id: postId },
       data: { status: POST_STATUS.IN_REVIEW },
     });
   } else {
-    await publishVersion(postId, { ...version, renderedArtUrl: finalRenderedArtUrl });
+    await publishVersion(postId, {
+      ...version,
+      renderedArtUrl: finalRenderedArtUrl,
+      renderedVideoUrl: finalRenderedVideoUrl,
+    });
   }
 
   return { post: await getPostDetail(postId), versionId: version.id };
 }
 
 /**
- * Publica de fato no Instagram e reflete o resultado no post — usado tanto
- * pela aprovação manual (approveAndPublish) quanto pelo auto-publish quando
- * o fluxo de revisão está desligado (ver AppSettings.reviewRequired).
+ * Publica de fato no Instagram (foto ou vídeo) e reflete o resultado no
+ * post — usado tanto pela aprovação manual (approveAndPublish) quanto pelo
+ * auto-publish quando o fluxo de revisão está desligado (ver
+ * AppSettings.reviewRequired).
  */
 async function publishVersion(postId: string, version: PostVersion) {
-  if (!version.renderedArtUrl) {
-    throw badRequest("A arte ainda não foi renderizada para esta versão.");
+  const isVideo = !!version.renderedVideoUrl;
+  if (!version.renderedArtUrl && !version.renderedVideoUrl) {
+    throw badRequest("A arte/vídeo ainda não foi renderizado para esta versão.");
   }
 
   await prisma.post.update({
@@ -439,10 +598,10 @@ async function publishVersion(postId: string, version: PostVersion) {
   });
 
   try {
-    const result = await publishToInstagram(
-      version.renderedArtUrl,
-      version.instagramCaption ?? version.title ?? "",
-    );
+    const caption = version.instagramCaption ?? version.title ?? "";
+    const result = isVideo
+      ? await publishVideoToInstagram(version.renderedVideoUrl!, caption)
+      : await publishToInstagram(version.renderedArtUrl!, caption);
     await prisma.publication.update({
       where: { id: publication.id },
       data: {
@@ -481,20 +640,21 @@ async function publishVersion(postId: string, version: PostVersion) {
  * que a publicação de fato dispara.
  */
 export async function approveAndPublish(
-  user: User,
+  user: CompanyUser,
   postId: string,
   versionId: string,
 ) {
   const post = await prisma.post.findUnique({ where: { id: postId } });
   if (!post) throw notFound("Post não encontrado.");
+  assertSameCompany(post.companyId, user.companyId);
   if (!canReviewPost(user, post)) throw forbidden("Você não pode revisar este post.");
 
   const version = await prisma.postVersion.findUnique({
     where: { id: versionId },
   });
   if (!version || version.postId !== postId) throw notFound("Versão não encontrada.");
-  if (!version.renderedArtUrl) {
-    throw badRequest("A arte ainda não foi renderizada para esta versão.");
+  if (!version.renderedArtUrl && !version.renderedVideoUrl) {
+    throw badRequest("A arte/vídeo ainda não foi renderizado para esta versão.");
   }
 
   const isDirect = can.publish(user);
@@ -526,13 +686,14 @@ export async function approveAndPublish(
 
 // ── 6) Recusar ───────────────────────────────────────────────
 export async function rejectPost(
-  user: User,
+  user: CompanyUser,
   postId: string,
   versionId: string,
   reason: string,
 ) {
   const post = await prisma.post.findUnique({ where: { id: postId } });
   if (!post) throw notFound("Post não encontrado.");
+  assertSameCompany(post.companyId, user.companyId);
   // Uma recusa é sempre imediata (de manager/admin ou de um colega revisor)
   // — o objetivo é facilitar barrar algo ruim, não também exigir 2 votos pra isso.
   if (!canReviewPost(user, post)) throw forbidden("Você não pode recusar este post.");
@@ -565,6 +726,7 @@ export function getPostDetail(postId: string) {
     include: {
       author: { select: { id: true, name: true, email: true, role: true } },
       photos: { orderBy: { orderIndex: "asc" } },
+      videos: { orderBy: { orderIndex: "asc" } },
       versions: {
         orderBy: { versionNumber: "desc" },
         include: {
@@ -575,6 +737,7 @@ export function getPostDetail(postId: string) {
           publications: { orderBy: { createdAt: "desc" } },
           artTemplate: true,
           selectedPhoto: true,
+          selectedVideo: true,
         },
       },
     },
@@ -589,9 +752,10 @@ export function getPostDetail(postId: string) {
  * ainda não apareceu). Por isso quem monta a página aciona
  * `maybeCleanupExpiredPosts()` explicitamente antes de ler os dois.
  */
-export function listPosts(opts: { status?: string; mineFor?: string } = {}) {
+export function listPosts(companyId: string, opts: { status?: string; mineFor?: string } = {}) {
   return prisma.post.findMany({
     where: {
+      companyId,
       status: opts.status,
       createdBy: opts.mineFor,
     },
@@ -606,6 +770,7 @@ export function listPosts(opts: { status?: string; mineFor?: string } = {}) {
           title: true,
           subtitle: true,
           renderedArtUrl: true,
+          renderedVideoUrl: true,
           versionNumber: true,
           decisions: {
             where: { decision: "approved" },
@@ -625,17 +790,20 @@ export function listPosts(opts: { status?: string; mineFor?: string } = {}) {
  * some junto com o banco, e fica um registro mínimo em post_audit_log. Não
  * mexe em nada já publicado no Instagram, só no nosso lado.
  */
-export async function deletePostNow(user: User, id: string): Promise<void> {
+export async function deletePostNow(user: CompanyUser, id: string): Promise<void> {
   const post = await prisma.post.findUnique({
     where: { id },
     select: {
       id: true,
+      companyId: true,
       createdBy: true,
       photos: { select: { storageUrl: true } },
-      versions: { select: { renderedArtUrl: true } },
+      videos: { select: { storageUrl: true } },
+      versions: { select: { renderedArtUrl: true, renderedVideoUrl: true } },
     },
   });
   if (!post) throw notFound("Post não encontrado.");
+  assertSameCompany(post.companyId, user.companyId);
   if (!canEditPost(user, post)) {
     throw forbidden("Você só pode apagar pautas que você mesmo criou.");
   }
@@ -647,8 +815,9 @@ export async function deletePostNow(user: User, id: string): Promise<void> {
  * (título, status, autor, datas) pra responder "quem postou o quê e
  * quando" numa auditoria futura, sem guardar fotos/versões/decisões.
  */
-export function listAuditLogs(limit = 50) {
+export function listAuditLogs(companyId: string, limit = 50) {
   return prisma.postAuditLog.findMany({
+    where: { companyId },
     orderBy: { purgedAt: "desc" },
     take: limit,
   });

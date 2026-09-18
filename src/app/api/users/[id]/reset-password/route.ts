@@ -1,5 +1,5 @@
 import { type NextRequest } from "next/server";
-import { requireUser, generateTempPassword, hashPassword } from "@/lib/auth";
+import { requireCompanyUser, generateTempPassword, hashPassword } from "@/lib/auth";
 import { requireRole } from "@/lib/rbac";
 import { sendCredentialsEmail } from "@/lib/email";
 import { prisma } from "@/lib/db";
@@ -13,15 +13,17 @@ import { badRequest, notFound, ok, route } from "@/lib/http";
  */
 export const POST = route(
   async (_req: NextRequest, ctx: { params: Promise<{ id: string }> }) => {
-    const actor = await requireUser();
+    const actor = await requireCompanyUser();
     requireRole(actor, "manager", "admin");
     const { id } = await ctx.params;
 
     const target = await prisma.user.findUnique({
       where: { id },
-      select: { id: true, name: true, email: true },
+      select: { id: true, name: true, email: true, companyId: true },
     });
-    if (!target) throw notFound("Usuário não encontrado.");
+    if (!target || target.companyId !== actor.companyId) {
+      throw notFound("Usuário não encontrado.");
+    }
 
     const tempPassword = generateTempPassword();
     const passwordResetAt = new Date();

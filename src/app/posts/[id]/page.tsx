@@ -15,22 +15,24 @@ export default async function PostPage({
   params: Promise<{ id: string }>;
 }) {
   const user = await getCurrentUser();
-  if (!user) return null;
+  if (!user || !user.companyId) return null;
 
   const { id } = await params;
   const post = await getPostDetail(id);
-  if (!post) notFound();
+  if (!post || post.companyId !== user.companyId) notFound();
 
-  const templatesRaw = sortTemplatesByFormat(
-    await prisma.artTemplate.findMany({
-      where: { isActive: true },
+  const [templatesRaw, company] = await Promise.all([
+    prisma.artTemplate.findMany({
+      where: { companyId: user.companyId, isActive: true },
       orderBy: { createdAt: "desc" },
     }),
-  );
+    prisma.company.findUnique({ where: { id: user.companyId } }),
+  ]);
+  const sortedTemplates = sortTemplatesByFormat(templatesRaw);
 
   // Serializa para props client-safe (datas -> ISO, JSON -> tipado).
   // Ordenado com 4:5 primeiro — é o formato pré-selecionado no editor.
-  const templates: EditorTemplate[] = templatesRaw.map((t) => ({
+  const templates: EditorTemplate[] = sortedTemplates.map((t) => ({
     id: t.id,
     name: t.name,
     canvasWidth: t.canvasWidth,
@@ -49,6 +51,13 @@ export default async function PostPage({
     author: { name: post.author.name },
     credits: (post.credits as Credit[] | null) ?? [],
     photos: post.photos.map((p) => ({ id: p.id, storageUrl: p.storageUrl })),
+    videos: post.videos.map((v) => ({
+      id: v.id,
+      storageUrl: v.storageUrl,
+      previewFrameUrl: v.previewFrameUrl,
+      width: v.width,
+      height: v.height,
+    })),
     versions: post.versions.map((v) => ({
       id: v.id,
       versionNumber: v.versionNumber,
@@ -69,6 +78,8 @@ export default async function PostPage({
       } | null,
       titleOffset: v.titleOffset as { offsetX: number; offsetY: number } | null,
       subtitleOffset: v.subtitleOffset as { offsetX: number; offsetY: number } | null,
+      selectedVideoId: v.selectedVideoId,
+      renderedVideoUrl: v.renderedVideoUrl,
       createdAt: v.createdAt.toISOString(),
       decisions: v.decisions.map((d) => ({
         id: d.id,
@@ -86,6 +97,11 @@ export default async function PostPage({
         user={{ id: user.id, name: user.name, role: user.role }}
         post={serialized}
         templates={templates}
+        company={{
+          name: company?.name ?? null,
+          logoUrl: company?.logoUrl ?? null,
+          instagramHandle: company?.instagramHandle ?? null,
+        }}
       />
     </AppShell>
   );

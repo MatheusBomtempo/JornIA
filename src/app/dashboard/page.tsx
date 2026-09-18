@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const user = await getCurrentUser();
-  if (!user) return null;
+  if (!user || !user.companyId) return null;
 
   const { locale, dict } = await getServerDictionary();
   const dateLocale = locale === "pt" ? "pt-BR" : "en-US";
@@ -21,7 +21,10 @@ export default async function DashboardPage() {
   // Precisa terminar ANTES de ler posts/log em paralelo — senão a leitura
   // do log pode correr antes da linha ser inserida pela própria limpeza.
   await maybeCleanupExpiredPosts();
-  const [posts, auditLogs] = await Promise.all([listPosts(), listAuditLogs()]);
+  const [posts, auditLogs] = await Promise.all([
+    listPosts(user.companyId),
+    listAuditLogs(user.companyId),
+  ]);
 
   return (
     <AppShell user={{ name: user.name, role: user.role, mustSetPassword: user.passwordResetAt !== null }}>
@@ -77,7 +80,7 @@ export default async function DashboardPage() {
                     variant="overlay"
                     postId={post.id}
                     versionId={v.id}
-                    hasArt={!!v.renderedArtUrl}
+                    hasArt={!!v.renderedArtUrl || !!v.renderedVideoUrl}
                     alreadyApproved={alreadyApproved}
                   />
                 )}
@@ -85,7 +88,16 @@ export default async function DashboardPage() {
                   <DeletePostButton postId={post.id} />
                 )}
                 <div className="aspect-square bg-black">
-                  {v?.renderedArtUrl ? (
+                  {v?.renderedVideoUrl ? (
+                    <video
+                      src={v.renderedVideoUrl}
+                      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+                      muted
+                      loop
+                      playsInline
+                      preload="metadata"
+                    />
+                  ) : v?.renderedArtUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={v.renderedArtUrl}

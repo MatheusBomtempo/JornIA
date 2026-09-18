@@ -1,5 +1,5 @@
 import { type NextRequest } from "next/server";
-import { requireUser } from "@/lib/auth";
+import { requireCompanyUser } from "@/lib/auth";
 import { addPhotoSchema } from "@/lib/validation";
 import { addPhotoToPost } from "@/lib/services/posts";
 import { created, route } from "@/lib/http";
@@ -9,7 +9,7 @@ import { created, route } from "@/lib/http";
 // baixou do Google Imagens ou de um banco gratuito a partir de uma sugestão).
 export const POST = route(
   async (req: NextRequest, ctx: { params: Promise<{ id: string }> }) => {
-    const user = await requireUser();
+    const user = await requireCompanyUser();
     const { id } = await ctx.params;
     const input = addPhotoSchema.parse(await req.json());
     const { photo, post } = await addPhotoToPost(user, id, input);

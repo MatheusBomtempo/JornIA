@@ -1,9 +1,11 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { apiPost, apiPatch } from "@/lib/api-client";
+import { apiGet, apiPost, apiPatch } from "@/lib/api-client";
 import { ArtEditor, type EditorTemplate, type EditorPhoto } from "./ArtEditor";
+import { VideoEditor, type EditorVideo } from "./VideoEditor";
 import { InstagramPreview } from "./InstagramPreview";
 import { StatusBadge } from "./StatusBadge";
 import { Stepper } from "./Stepper";
@@ -18,6 +20,7 @@ import {
 } from "@/lib/domain";
 
 const MAX_PHOTO_MB = 15;
+const MAX_VIDEO_MB = 100;
 
 function googleImagesUrl(query: string): string {
   return `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(query)}`;
@@ -43,6 +46,8 @@ interface Version {
   photoTransform: { offsetX: number; offsetY: number; scale: number } | null;
   titleOffset: { offsetX: number; offsetY: number } | null;
   subtitleOffset: { offsetX: number; offsetY: number } | null;
+  selectedVideoId: string | null;
+  renderedVideoUrl: string | null;
   createdAt: string;
   decisions: {
     id: string;
@@ -61,6 +66,7 @@ interface PostDetail {
   author: { name: string };
   credits: Credit[];
   photos: EditorPhoto[];
+  videos: EditorVideo[];
   versions: Version[];
 }
 
@@ -68,6 +74,7 @@ interface Props {
   user: { id: string; name: string; role: UserRole };
   post: PostDetail;
   templates: EditorTemplate[];
+  company: { name: string | null; logoUrl: string | null; instagramHandle: string | null };
 }
 
 const STEP_ORDER = ["text", "image", "review"] as const;
@@ -75,7 +82,7 @@ type Step = (typeof STEP_ORDER)[number];
 
 type Panel = null | "rewrite" | "reject" | "text";
 
-export function PostWorkspace({ user, post, templates }: Props) {
+export function PostWorkspace({ user, post, templates, company }: Props) {
   const router = useRouter();
   const { dict, locale } = useLocale();
   const dateLocale = locale === "pt" ? "pt-BR" : "en-US";
@@ -92,11 +99,19 @@ export function PostWorkspace({ user, post, templates }: Props) {
   const canEdit = isManagerOrAdmin || isAuthor;
   const canDecide = isManagerOrAdmin || isPeerReviewer;
 
+  // Presença de vídeo decide o formato do passo 2 inteiro (VideoEditor em
+  // vez de ArtEditor) — post de vídeo não usa template/slots, só o cartão
+  // de título com animação, sempre em 9:16 (padrão de Reels).
+  const isVideoPost = post.videos.length > 0;
+  const mediaReady = !!current?.renderedArtUrl || !!current?.renderedVideoUrl;
+
   // Proporção real do template desta versão, pra prévia não cortar o 4:5.
   const currentTemplate = templates.find((t) => t.id === current?.artTemplateId);
-  const previewRatio = currentTemplate
-    ? currentTemplate.canvasWidth / currentTemplate.canvasHeight
-    : undefined;
+  const previewRatio = isVideoPost
+    ? 1080 / 1920
+    : currentTemplate
+      ? currentTemplate.canvasWidth / currentTemplate.canvasHeight
+      : undefined;
   const isFinished =
     post.status === POST_STATUS.PUBLISHED || post.status === POST_STATUS.REJECTED;
 
@@ -165,6 +180,64 @@ export function PostWorkspace({ user, post, templates }: Props) {
     [post.id, router, dict],
   );
 
+  // Busca embutida no Pexels (ver PhotoPickerModal) — string = query aberta
+  // no picker, null = fechado. Só um picker por vez, então fica no nível do
+  // workspace em vez de duplicado dentro de cada ImageSuggestions.
+  const [photoPickerQuery, setPhotoPickerQuery] = useState<string | null>(null);
+
+  // Mesmo final do addPhoto (anexa e recarrega), mas a partir de uma foto já
+  // escolhida no picker em vez de um File do input.
+  const importPexelsPhoto = useCallback(
+    async (downloadUrl: string) => {
+      const up = await apiPost<{ url: string }>("/api/photo-search/import", { downloadUrl });
+      const { photo } = await apiPost<{ photo: { id: string } }>(
+        `/api/posts/${post.id}/photos`,
+        { storageUrl: up.url },
+      );
+      setLastAddedPhotoId(photo.id);
+      router.refresh();
+    },
+    [post.id, router],
+  );
+
+  // Mesma ideia do addPhoto, pro vídeo — anexa e recarrega; qual usar
+  // continua sendo escolhido manualmente no VideoEditor.
+  const [videoBusy, setVideoBusy] = useState(false);
+  const [videoError, setVideoError] = useState<string | null>(null);
+  const [videoDragging, setVideoDragging] = useState(false);
+  const videoInputRef = useRef<HTMLInputElement>(null);
+
+  const addVideo = useCallback(
+    async (file: File | undefined | null) => {
+      if (!file) return;
+      if (!file.type.startsWith("video/")) {
+        setVideoError(dict.postWorkspace.errors.invalidVideoType);
+        return;
+      }
+      if (file.size > MAX_VIDEO_MB * 1024 * 1024) {
+        setVideoError(
+          `${dict.postWorkspace.errors.videoTooLargePrefix} ${MAX_VIDEO_MB} ${dict.postWorkspace.errors.videoTooLargeSuffix}`,
+        );
+        return;
+      }
+      setVideoError(null);
+      setVideoBusy(true);
+      try {
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("kind", "video");
+        const up = await apiPost<{ url: string }>("/api/upload", fd);
+        await apiPost(`/api/posts/${post.id}/videos`, { storageUrl: up.url });
+        router.refresh();
+      } catch (err) {
+        setVideoError((err as Error).message);
+      } finally {
+        setVideoBusy(false);
+      }
+    },
+    [post.id, router, dict],
+  );
+
   async function run(label: string, fn: () => Promise<unknown>) {
     setBusy(label);
     setError(null);
@@ -204,6 +277,7 @@ export function PostWorkspace({ user, post, templates }: Props) {
     );
 
   const hasPhotos = post.photos.length > 0;
+  const hasVideos = post.videos.length > 0;
   const hasTemplates = templates.length > 0;
 
   const approvals = current?.decisions.filter((d) => d.decision === "approved") ?? [];
@@ -316,15 +390,32 @@ export function PostWorkspace({ user, post, templates }: Props) {
       {/* ───────────── PASSO 2: IMAGEM ───────────── */}
       {step === "image" && (
         <section className="card p-4 sm:p-5">
-          <h2 className="mb-1 text-sm font-semibold">{dict.postWorkspace.image.heading}</h2>
+          <h2 className="mb-1 flex items-center gap-1.5 text-sm font-semibold">
+            <span aria-hidden>{isVideoPost ? "▶️" : "📷"}</span>
+            {dict.postWorkspace.image.heading}
+          </h2>
           <p className="hint mb-4 mt-0">
             {dict.postWorkspace.image.hint}
           </p>
 
           {!canEdit ? (
-            // Colega revisando: só visualiza, não mexe na foto de outra pessoa.
+            // Colega revisando: só visualiza, não mexe na foto/vídeo de outra pessoa.
             <div className="space-y-4">
-              {current?.renderedArtUrl ? (
+              {isVideoPost ? (
+                current?.renderedVideoUrl ? (
+                  <video
+                    src={current.renderedVideoUrl}
+                    controls
+                    className="mx-auto max-h-[420px] w-full rounded-xl border border-line bg-black"
+                  />
+                ) : (
+                  <EmptyNote>
+                    {hasVideos
+                      ? dict.postWorkspace.image.videoUploadedNoRender
+                      : dict.postWorkspace.image.noVideoReadOnly}
+                  </EmptyNote>
+                )
+              ) : current?.renderedArtUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={current.renderedArtUrl}
@@ -340,21 +431,71 @@ export function PostWorkspace({ user, post, templates }: Props) {
               )}
               <ImageSuggestions suggestions={current?.imageSuggestions ?? []} />
             </div>
-          ) : !hasPhotos ? (
+          ) : !hasPhotos && !hasVideos ? (
             <div className="space-y-4">
               <EmptyNote>
                 {dict.postWorkspace.image.noPhotoEditable}
               </EmptyNote>
-              <PhotoUploader
-                dragging={photoDragging}
-                busy={photoBusy}
-                onDragOver={() => setPhotoDragging(true)}
-                onDragLeave={() => setPhotoDragging(false)}
-                onDrop={(f) => { setPhotoDragging(false); addPhoto(f); }}
-                onPick={() => photoInputRef.current?.click()}
-              />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <PhotoUploader
+                  dragging={photoDragging}
+                  busy={photoBusy}
+                  onDragOver={() => setPhotoDragging(true)}
+                  onDragLeave={() => setPhotoDragging(false)}
+                  onDrop={(f) => { setPhotoDragging(false); addPhoto(f); }}
+                  onPick={() => photoInputRef.current?.click()}
+                />
+                <VideoUploader
+                  dragging={videoDragging}
+                  busy={videoBusy}
+                  onDragOver={() => setVideoDragging(true)}
+                  onDragLeave={() => setVideoDragging(false)}
+                  onDrop={(f) => { setVideoDragging(false); addVideo(f); }}
+                  onPick={() => videoInputRef.current?.click()}
+                />
+              </div>
               {photoError && <p className="alert-error">{photoError}</p>}
-              <ImageSuggestions suggestions={current?.imageSuggestions ?? []} />
+              {videoError && <p className="alert-error">{videoError}</p>}
+              <ImageSuggestions
+                suggestions={current?.imageSuggestions ?? []}
+                onSearchPhotos={setPhotoPickerQuery}
+              />
+            </div>
+          ) : isVideoPost ? (
+            <div className="space-y-4">
+              <details className="group card-soft p-3">
+                <summary className="btn-ghost w-full cursor-pointer list-none">
+                  {dict.postWorkspace.image.addOrChangeVideo}
+                </summary>
+                <div className="mt-3 space-y-3">
+                  <VideoUploader
+                    dragging={videoDragging}
+                    busy={videoBusy}
+                    compact
+                    onDragOver={() => setVideoDragging(true)}
+                    onDragLeave={() => setVideoDragging(false)}
+                    onDrop={(f) => { setVideoDragging(false); addVideo(f); }}
+                    onPick={() => videoInputRef.current?.click()}
+                  />
+                  {videoError && <p className="alert-error">{videoError}</p>}
+                </div>
+              </details>
+
+              <VideoEditor
+                key={post.videos.map((v) => v.id).join(",")}
+                postId={post.id}
+                videos={post.videos}
+                companyLogoUrl={company.logoUrl}
+                initial={{
+                  selectedVideoId: current?.selectedVideoId,
+                  title: current?.title,
+                  titleOffsetY: current?.titleOffset?.offsetY,
+                }}
+                onSaved={() => {
+                  setStepOverride(null);
+                  router.refresh();
+                }}
+              />
             </div>
           ) : !hasTemplates ? (
             <EmptyNote>
@@ -378,7 +519,10 @@ export function PostWorkspace({ user, post, templates }: Props) {
                     onPick={() => photoInputRef.current?.click()}
                   />
                   {photoError && <p className="alert-error">{photoError}</p>}
-                  <ImageSuggestions suggestions={current?.imageSuggestions ?? []} />
+                  <ImageSuggestions
+                    suggestions={current?.imageSuggestions ?? []}
+                    onSearchPhotos={setPhotoPickerQuery}
+                  />
                 </div>
               </details>
 
@@ -405,13 +549,22 @@ export function PostWorkspace({ user, post, templates }: Props) {
             </div>
           )}
           {canEdit && (
-            <input
-              ref={photoInputRef}
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              className="hidden"
-              onChange={(e) => addPhoto(e.target.files?.[0])}
-            />
+            <>
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                className="hidden"
+                onChange={(e) => addPhoto(e.target.files?.[0])}
+              />
+              <input
+                ref={videoInputRef}
+                type="file"
+                accept="video/mp4,video/quicktime,video/webm"
+                className="hidden"
+                onChange={(e) => addVideo(e.target.files?.[0])}
+              />
+            </>
           )}
         </section>
       )}
@@ -424,8 +577,11 @@ export function PostWorkspace({ user, post, templates }: Props) {
             <h2 className="mb-3 text-sm font-semibold">{dict.postWorkspace.review.previewHeading}</h2>
             <InstagramPreview
               artUrl={current?.renderedArtUrl}
+              videoUrl={current?.renderedVideoUrl}
               caption={current?.instagramCaption}
               aspectRatio={previewRatio}
+              handle={company.instagramHandle ?? company.name ?? undefined}
+              logoUrl={company.logoUrl ?? undefined}
             />
           </section>
 
@@ -439,7 +595,7 @@ export function PostWorkspace({ user, post, templates }: Props) {
                   <button
                     className="btn-success w-full"
                     onClick={approve}
-                    disabled={!!busy || !current?.renderedArtUrl}
+                    disabled={!!busy || !mediaReady}
                   >
                     {busy ? <BusyLabel label={busy} seconds={elapsed} /> : dict.postWorkspace.review.approveAndPublish}
                   </button>
@@ -456,7 +612,7 @@ export function PostWorkspace({ user, post, templates }: Props) {
                     <button
                       className="btn-success w-full"
                       onClick={approve}
-                      disabled={!!busy || !current?.renderedArtUrl || !!myApproval}
+                      disabled={!!busy || !mediaReady || !!myApproval}
                     >
                       {busy ? (
                         <BusyLabel label={busy} seconds={elapsed} />
@@ -485,7 +641,7 @@ export function PostWorkspace({ user, post, templates }: Props) {
                   </p>
                 )}
 
-                {!current?.renderedArtUrl && (
+                {!mediaReady && (
                   <p className="hint">
                     {dict.postWorkspace.review.artNotReady}
                   </p>
@@ -597,6 +753,15 @@ export function PostWorkspace({ user, post, templates }: Props) {
           </div>
         </div>
       )}
+
+      {photoPickerQuery !== null && (
+        <PhotoPickerModal
+          key={photoPickerQuery}
+          initialQuery={photoPickerQuery}
+          onClose={() => setPhotoPickerQuery(null)}
+          onPick={importPexelsPhoto}
+        />
+      )}
     </div>
   );
 }
@@ -668,6 +833,7 @@ function PhotoUploader({
                       : "border-line bg-elevated/60 hover:border-brand-500/60"
                   }`}
     >
+      <span aria-hidden className="text-2xl">📷</span>
       <p className="text-sm font-medium">
         {busy ? dict.postWorkspace.photoUploader.sending : dict.postWorkspace.photoUploader.dragOrTap}
       </p>
@@ -678,13 +844,65 @@ function PhotoUploader({
   );
 }
 
+/** Mesma ideia do PhotoUploader, pro vídeo (formato/teto diferentes). */
+function VideoUploader({
+  dragging, busy, compact, onDragOver, onDragLeave, onDrop, onPick,
+}: {
+  dragging: boolean;
+  busy: boolean;
+  compact?: boolean;
+  onDragOver: () => void;
+  onDragLeave: () => void;
+  onDrop: (file: File | undefined) => void;
+  onPick: () => void;
+}) {
+  const { dict } = useLocale();
+  return (
+    <div
+      onDragOver={(e) => { e.preventDefault(); onDragOver(); }}
+      onDragLeave={onDragLeave}
+      onDrop={(e) => { e.preventDefault(); onDrop(e.dataTransfer.files?.[0]); }}
+      onClick={onPick}
+      className={`flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl
+                  border-2 border-dashed text-center transition-colors ${
+                    compact ? "px-3 py-4" : "px-4 py-8"
+                  } ${
+                    dragging
+                      ? "border-brand-500 bg-brand-500/10"
+                      : "border-line bg-elevated/60 hover:border-brand-500/60"
+                  }`}
+    >
+      <span aria-hidden className="text-2xl">▶️</span>
+      <p className="text-sm font-medium">
+        {busy ? dict.postWorkspace.videoUploader.sending : dict.postWorkspace.videoUploader.dragOrTap}
+      </p>
+      <p className="text-xs text-muted">
+        {dict.postWorkspace.videoUploader.formatsPrefix} {MAX_VIDEO_MB} {dict.postWorkspace.videoUploader.mbSuffix}
+      </p>
+    </div>
+  );
+}
+
 /**
  * Exatamente 2 sugestões de busca geradas pela IA — só ajudam a achar uma
- * imagem; nunca escolhem, baixam ou publicam nada sozinhas. Cada sugestão
- * abre a busca correspondente numa aba nova; a foto encontrada precisa ser
- * baixada e enviada de volta pelo uploader acima.
+ * imagem; nunca escolhem, baixam ou publicam nada sozinhas.
+ *
+ * "Google Imagens" sempre abre numa aba nova — a página de resultados do
+ * Google bloqueia iframe e não existe API gratuita equivalente, então dá
+ * pra achar a foto real do fato, mas não pra embutir/automatizar isso.
+ *
+ * "Fotos gratuitas" (Pexels) já é embutido quando `onSearchPhotos` é
+ * passado (abre o PhotoPickerModal — busca, escolhe, a foto já entra na
+ * arte, sem sair do site). Sem esse callback (revisão de colega, só
+ * visualização), cai pro link de sempre em aba nova.
  */
-function ImageSuggestions({ suggestions }: { suggestions: string[] }) {
+function ImageSuggestions({
+  suggestions,
+  onSearchPhotos,
+}: {
+  suggestions: string[];
+  onSearchPhotos?: (query: string) => void;
+}) {
   const { dict } = useLocale();
   if (!suggestions.length) return null;
   return (
@@ -703,23 +921,249 @@ function ImageSuggestions({ suggestions }: { suggestions: string[] }) {
                 href={googleImagesUrl(q)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="btn-ghost btn-sm"
+                className="btn-ghost btn-sm gap-1.5"
               >
+                <GoogleIcon />
                 {dict.postWorkspace.imageSuggestions.googleImages}
               </a>
-              <a
-                href={freePhotosUrl(q)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn-ghost btn-sm"
-              >
-                {dict.postWorkspace.imageSuggestions.freePhotos}
-              </a>
+              {onSearchPhotos ? (
+                <button
+                  type="button"
+                  className="btn-ghost btn-sm"
+                  onClick={() => onSearchPhotos(q)}
+                >
+                  {dict.postWorkspace.imageSuggestions.freePhotos}
+                </button>
+              ) : (
+                <a
+                  href={freePhotosUrl(q)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-ghost btn-sm"
+                >
+                  {dict.postWorkspace.imageSuggestions.freePhotos}
+                </a>
+              )}
             </div>
           </div>
         ))}
       </div>
     </div>
+  );
+}
+
+/** Logo oficial multicolor do Google — mantém as cores de marca em qualquer tema. */
+function GoogleIcon() {
+  return (
+    <svg viewBox="0 0 18 18" className="h-3.5 w-3.5 shrink-0" aria-hidden>
+      <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.259h2.908c1.702-1.567 2.684-3.874 2.684-6.617z" />
+      <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z" />
+      <path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" />
+      <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z" />
+    </svg>
+  );
+}
+
+interface PexelsPhoto {
+  id: number;
+  thumbnailUrl: string;
+  downloadUrl: string;
+  width: number;
+  height: number;
+  photographer: string;
+  photographerUrl: string;
+  alt: string;
+}
+
+type PhotoSearchResponse =
+  | { enabled: false }
+  | { enabled: true; photos: PexelsPhoto[]; nextPage: number | null };
+
+/**
+ * Busca embutida no Pexels, aberta a partir de uma sugestão da IA (query já
+ * preenchida, editável). Mostra a grade de fotos sem sair do site; clicar
+ * numa já baixa (server-side, via /photo-search/import) e anexa ao post
+ * (`onPick`, o mesmo final do addPhoto normal). Sem PEXELS_API_KEY
+ * configurada, cai pro link de sempre em aba nova.
+ */
+function PhotoPickerModal({
+  initialQuery,
+  onClose,
+  onPick,
+}: {
+  initialQuery: string;
+  onClose: () => void;
+  onPick: (downloadUrl: string) => Promise<void>;
+}) {
+  const { dict } = useLocale();
+  const t = dict.postWorkspace.photoPicker;
+  const [q, setQ] = useState(initialQuery);
+  const [photos, setPhotos] = useState<PexelsPhoto[]>([]);
+  const [nextPage, setNextPage] = useState<number | null>(null);
+  const [enabled, setEnabled] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pickingId, setPickingId] = useState<number | null>(null);
+
+  const search = useCallback(async (query: string, page: number, append: boolean) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await apiGet<PhotoSearchResponse>(
+        `/api/photo-search?q=${encodeURIComponent(query)}&page=${page}`,
+      );
+      if (!res.enabled) {
+        setEnabled(false);
+        return;
+      }
+      setPhotos((prev) => (append ? [...prev, ...res.photos] : res.photos));
+      setNextPage(res.nextPage);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    search(initialQuery, 1, false);
+    // Só na abertura — buscas seguintes (novo termo, "carregar mais") vêm
+    // de ações explícitas do usuário, não de mudança de prop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function pick(photo: PexelsPhoto) {
+    setPickingId(photo.id);
+    setError(null);
+    try {
+      await onPick(photo.downloadUrl);
+      onClose();
+    } catch (err) {
+      setError(`${t.importError}${(err as Error).message}`);
+      setPickingId(null);
+    }
+  }
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4 backdrop-blur-sm sm:items-center"
+      onClick={onClose}
+    >
+      <div
+        className="card flex max-h-[85vh] w-full max-w-2xl flex-col p-4 sm:p-5"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="photo-picker-title"
+      >
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div>
+            <h2 id="photo-picker-title" className="text-sm font-semibold">
+              🖼️ {t.title}
+            </h2>
+            <p className="hint mb-0 mt-0.5">{t.subtitle}</p>
+          </div>
+          <button
+            type="button"
+            className="btn-subtle btn-sm shrink-0"
+            onClick={onClose}
+            aria-label={t.closeLabel}
+          >
+            ✕
+          </button>
+        </div>
+
+        <form
+          className="mb-3 flex gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            search(q, 1, false);
+          }}
+        >
+          <input
+            className="input"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder={t.searchPlaceholder}
+          />
+          <button type="submit" className="btn-primary shrink-0" disabled={loading || !q.trim()}>
+            {t.searchButton}
+          </button>
+        </form>
+
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {!enabled ? (
+            <div className="alert-info space-y-2">
+              <p className="font-medium">{t.notConfiguredTitle}</p>
+              <p>{t.notConfiguredBody}</p>
+              <a
+                href={freePhotosUrl(initialQuery)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-ghost btn-sm"
+              >
+                {t.openInNewTab}
+              </a>
+            </div>
+          ) : (
+            <>
+              {error && <p className="alert-error mb-3">{error}</p>}
+              {loading && photos.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted">{t.loading}</p>
+              ) : photos.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted">{t.empty}</p>
+              ) : (
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {photos.map((photo) => (
+                    <button
+                      key={photo.id}
+                      type="button"
+                      onClick={() => pick(photo)}
+                      disabled={pickingId !== null}
+                      title={photo.alt}
+                      className="group relative aspect-square overflow-hidden rounded-lg border border-line bg-elevated transition-opacity disabled:cursor-wait"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={photo.thumbnailUrl}
+                        alt={photo.alt}
+                        loading="lazy"
+                        className={`h-full w-full object-cover transition-transform group-hover:scale-105 ${
+                          pickingId === photo.id ? "opacity-40" : ""
+                        }`}
+                      />
+                      {pickingId === photo.id && (
+                        <span className="absolute inset-0 flex items-center justify-center bg-black/40 text-xs font-medium text-white">
+                          {t.importing}
+                        </span>
+                      )}
+                      {photo.photographer && (
+                        <span className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/70 to-transparent px-1.5 py-1 text-left text-[10px] text-white/90">
+                          {t.photoCreditPrefix}{photo.photographer}{t.photoCreditSuffix}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {nextPage !== null && photos.length > 0 && (
+                <div className="mt-3 flex justify-center">
+                  <button
+                    type="button"
+                    className="btn-ghost btn-sm"
+                    disabled={loading}
+                    onClick={() => search(q, nextPage, true)}
+                  >
+                    {loading ? t.loadingMore : t.loadMore}
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 

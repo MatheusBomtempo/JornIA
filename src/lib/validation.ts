@@ -80,6 +80,30 @@ export const addPhotoSchema = z.object({
   storageUrl: z.string().url(),
 });
 
+/** POST /photo-search/import — foto escolhida no picker embutido do Pexels. */
+export const importPexelsPhotoSchema = z.object({
+  downloadUrl: z.string().url(),
+});
+
+/** Mesma ideia do addPhotoSchema, pro fluxo de vídeo. */
+export const addVideoSchema = z.object({
+  storageUrl: z.string().url(),
+  durationMs: z.number().int().positive().optional(),
+});
+
+/**
+ * Salva a escolha de vídeo + título (o texto que entra animado por cima) e
+ * dispara o render final — equivalente ao saveArtSchema, mas sem template/
+ * foto/posição: o vídeo não tem slots, só o cartão de título.
+ */
+export const saveVideoSchema = z.object({
+  selectedVideoId: z.string().uuid(),
+  title: z.string().max(TITLE_MAX).default(""),
+  /** Ajuste vertical do bloco no editor (px em escala 1080x1920). O render
+   *  trava o resultado dentro da área segura do Reels de qualquer jeito. */
+  titleOffsetY: z.number().default(0),
+});
+
 export const editVersionSchema = z
   .object({
     title: z.string().max(TITLE_MAX).optional(),
@@ -132,6 +156,20 @@ export const updateUserSchema = z.object({
   role: z.enum(USER_ROLES).optional(),
   active: z.boolean().optional(),
   password: z.string().min(8).optional(),
+});
+
+// ── Empresa (onboarding) ──────────────────────────────────────
+export const createCompanySchema = z.object({
+  name: z.string().trim().min(1, "Informe o nome da empresa."),
+  logoUrl: z.string().url().optional(),
+  instagramHandle: z.string().trim().max(60).optional(),
+});
+
+/** Edição depois do onboarding (Admin → Empresa). `null` limpa o campo. */
+export const updateCompanySchema = z.object({
+  name: z.string().trim().min(1, "Informe o nome da empresa.").optional(),
+  logoUrl: z.string().url().nullable().optional(),
+  instagramHandle: z.string().trim().max(60).nullable().optional(),
 });
 
 // ── Configurações do app ─────────────────────────────────────
