@@ -79,6 +79,7 @@ export default async function PostPage({
       titleOffset: v.titleOffset as { offsetX: number; offsetY: number } | null,
       subtitleOffset: v.subtitleOffset as { offsetX: number; offsetY: number } | null,
       selectedVideoId: v.selectedVideoId,
+      videoTemplate: v.videoTemplate,
       renderedVideoUrl: v.renderedVideoUrl,
       createdAt: v.createdAt.toISOString(),
       decisions: v.decisions.map((d) => ({
@@ -101,6 +102,8 @@ export default async function PostPage({
           name: company?.name ?? null,
           logoUrl: company?.logoUrl ?? null,
           instagramHandle: company?.instagramHandle ?? null,
+          brandColorDark: company?.brandColorDark ?? null,
+          brandColorLight: company?.brandColorLight ?? null,
         }}
       />
     </AppShell>

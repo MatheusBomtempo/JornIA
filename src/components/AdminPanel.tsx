@@ -6,6 +6,7 @@ import { USER_ROLES, type UserRole } from "@/lib/domain";
 import { TemplateBuilder } from "./TemplateBuilder";
 import { Tooltip } from "./Tooltip";
 import { useLocale } from "./LocaleProvider";
+import { FALLBACK_BRAND_DARK, FALLBACK_BRAND_LIGHT } from "@/lib/render/video-layout";
 
 type Tab = "style" | "templates" | "users" | "keys" | "settings" | "company" | "balance";
 
@@ -536,11 +537,14 @@ function KeysSection() {
   );
 }
 
-// ── Empresa (nome, logo, @) ──────────────────────────────────
+// ── Empresa (nome, logo, @, cores) ────────────────────────────
 interface CompanyInfo {
   name: string;
   logoUrl: string | null;
   instagramHandle: string | null;
+  brandColorDark: string | null;
+  brandColorLight: string | null;
+  brandColorAccent: string | null;
 }
 
 const MAX_LOGO_MB = 5;
@@ -548,6 +552,10 @@ const MAX_LOGO_MB = 5;
 /**
  * A logo entra na prévia do Instagram e é gravada no rodapé do vídeo
  * renderizado — é o mesmo campo definido no onboarding, editável aqui depois.
+ * As cores da marca alimentam os templates de vídeo (ver
+ * buildVideoCardStyles em lib/render/video-layout) — <input type="color">
+ * sempre precisa de um hex válido, então os campos começam com o fallback
+ * que os templates já usam quando a empresa ainda não escolheu as próprias.
  */
 function CompanySection() {
   const { dict } = useLocale();
@@ -556,6 +564,9 @@ function CompanySection() {
   const [name, setName] = useState("");
   const [handle, setHandle] = useState("");
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [brandColorDark, setBrandColorDark] = useState(FALLBACK_BRAND_DARK);
+  const [brandColorLight, setBrandColorLight] = useState(FALLBACK_BRAND_LIGHT);
+  const [brandColorAccent, setBrandColorAccent] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -568,6 +579,9 @@ function CompanySection() {
       setName(d.company.name);
       setHandle(d.company.instagramHandle ?? "");
       setLogoUrl(d.company.logoUrl);
+      setBrandColorDark(d.company.brandColorDark ?? FALLBACK_BRAND_DARK);
+      setBrandColorLight(d.company.brandColorLight ?? FALLBACK_BRAND_LIGHT);
+      setBrandColorAccent(d.company.brandColorAccent);
     });
   }, []);
 
@@ -605,6 +619,9 @@ function CompanySection() {
         name: name.trim(),
         logoUrl,
         instagramHandle: handle.trim() || null,
+        brandColorDark,
+        brandColorLight,
+        brandColorAccent,
       });
       setCompany(updated);
       setHandle(updated.instagramHandle ?? "");
@@ -670,6 +687,32 @@ function CompanySection() {
           />
         </div>
 
+        <div className="space-y-3 border-t border-lineSoft pt-4">
+          <div>
+            <p className="text-sm font-medium">{t.colorsTitle}</p>
+            <p className="hint mt-0">{t.colorsHint}</p>
+          </div>
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+            <ColorField
+              label={t.darkColorLabel}
+              value={brandColorDark}
+              onChange={(v) => { setBrandColorDark(v); setSaved(false); }}
+            />
+            <ColorField
+              label={t.lightColorLabel}
+              value={brandColorLight}
+              onChange={(v) => { setBrandColorLight(v); setSaved(false); }}
+            />
+            <ColorField
+              label={t.accentColorLabel}
+              value={brandColorAccent ?? "#94a3b8"}
+              onChange={(v) => { setBrandColorAccent(v); setSaved(false); }}
+              onClear={() => { setBrandColorAccent(null); setSaved(false); }}
+              clearable={brandColorAccent !== null}
+            />
+          </div>
+        </div>
+
         {error && <p className="alert-error">{error}</p>}
         {saved && <p className="alert-success">✅ {t.saved}</p>}
 
@@ -677,6 +720,47 @@ function CompanySection() {
           {busy ? dict.common.saving : dict.common.save}
         </button>
       </div>
+    </div>
+  );
+}
+
+/** Um seletor de cor nativo + hex ao lado — usado pelas 3 cores da marca. */
+function ColorField({
+  label,
+  value,
+  onChange,
+  onClear,
+  clearable,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  onClear?: () => void;
+  clearable?: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-2.5 rounded-xl border border-line bg-elevated px-3 py-2.5">
+      <input
+        type="color"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        aria-label={label}
+        className="h-9 w-9 shrink-0 cursor-pointer rounded-lg border border-line bg-transparent p-0"
+      />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-xs font-medium text-muted">{label}</p>
+        <p className="truncate text-xs uppercase tabular-nums text-faint">{value}</p>
+      </div>
+      {clearable && onClear && (
+        <button
+          type="button"
+          onClick={onClear}
+          className="shrink-0 text-xs text-faint hover:text-ink"
+          title="Limpar"
+        >
+          ✕
+        </button>
+      )}
     </div>
   );
 }

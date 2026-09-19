@@ -38,9 +38,12 @@ interface UpdateCompanyInput {
   name?: string;
   logoUrl?: string | null;
   instagramHandle?: string | null;
+  brandColorDark?: string | null;
+  brandColorLight?: string | null;
+  brandColorAccent?: string | null;
 }
 
-/** Admin ajusta nome/logo/@ depois do onboarding (ver Admin → Empresa). */
+/** Admin ajusta nome/logo/@/cores depois do onboarding (ver Admin → Empresa). */
 export function updateCompany(companyId: string, input: UpdateCompanyInput) {
   return prisma.company.update({
     where: { id: companyId },
@@ -53,6 +56,9 @@ export function updateCompany(companyId: string, input: UpdateCompanyInput) {
           : input.instagramHandle
             ? normalizeHandle(input.instagramHandle)
             : null,
+      brandColorDark: input.brandColorDark,
+      brandColorLight: input.brandColorLight,
+      brandColorAccent: input.brandColorAccent,
     },
   });
 }

@@ -47,6 +47,7 @@ interface Version {
   titleOffset: { offsetX: number; offsetY: number } | null;
   subtitleOffset: { offsetX: number; offsetY: number } | null;
   selectedVideoId: string | null;
+  videoTemplate: string | null;
   renderedVideoUrl: string | null;
   createdAt: string;
   decisions: {
@@ -74,7 +75,13 @@ interface Props {
   user: { id: string; name: string; role: UserRole };
   post: PostDetail;
   templates: EditorTemplate[];
-  company: { name: string | null; logoUrl: string | null; instagramHandle: string | null };
+  company: {
+    name: string | null;
+    logoUrl: string | null;
+    instagramHandle: string | null;
+    brandColorDark: string | null;
+    brandColorLight: string | null;
+  };
 }
 
 const STEP_ORDER = ["text", "image", "review"] as const;
@@ -486,10 +493,12 @@ export function PostWorkspace({ user, post, templates, company }: Props) {
                 postId={post.id}
                 videos={post.videos}
                 companyLogoUrl={company.logoUrl}
+                companyBrandColors={{ dark: company.brandColorDark, light: company.brandColorLight }}
                 initial={{
                   selectedVideoId: current?.selectedVideoId,
                   title: current?.title,
                   titleOffsetY: current?.titleOffset?.offsetY,
+                  videoTemplate: current?.videoTemplate,
                 }}
                 onSaved={() => {
                   setStepOverride(null);

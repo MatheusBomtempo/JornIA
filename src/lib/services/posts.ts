@@ -248,6 +248,8 @@ export async function saveVideoAndRender(
       title: input.title,
       logoUrl: company?.logoUrl,
       titleOffsetY: input.titleOffsetY,
+      videoTemplate: input.videoTemplate,
+      brandColors: { dark: company?.brandColorDark, light: company?.brandColorLight },
     },
     `video/${postId}/v${version.versionNumber}-${Date.now()}.mp4`,
   );
@@ -259,6 +261,7 @@ export async function saveVideoAndRender(
       title: input.title,
       // Mesmo campo que a foto usa pro deslocamento do título — aqui só o Y.
       titleOffset: { offsetX: 0, offsetY: input.titleOffsetY ?? 0 },
+      videoTemplate: input.videoTemplate,
       renderedVideoUrl,
       editedBy: user.id,
     },
@@ -420,6 +423,7 @@ export async function regeneratePost(
       titleOffset: prev.titleOffset ?? undefined,
       subtitleOffset: prev.subtitleOffset ?? undefined,
       selectedVideoId: prev.selectedVideoId,
+      videoTemplate: prev.videoTemplate,
       editedBy: user.id,
     },
   });
@@ -483,6 +487,7 @@ export async function editVersionManually(
       subtitleOffset: source.subtitleOffset ?? undefined,
       renderedArtUrl: source.renderedArtUrl,
       selectedVideoId: source.selectedVideoId,
+      videoTemplate: source.videoTemplate,
       renderedVideoUrl: source.renderedVideoUrl,
       editedBy: user.id,
     },
@@ -535,6 +540,8 @@ export async function editVersionManually(
           title: version.title ?? "",
           logoUrl: company?.logoUrl,
           titleOffsetY: offset?.offsetY ?? 0,
+          videoTemplate: version.videoTemplate as "classic" | "light" | "bold",
+          brandColors: { dark: company?.brandColorDark, light: company?.brandColorLight },
         },
         `video/${postId}/v${version.versionNumber}-${Date.now()}.mp4`,
       );

@@ -32,6 +32,15 @@ model Company {
   logoUrl         String?  @map("logo_url")
   /** @ do Instagram da empresa (com arroba), ex.: "@meujornal". Opcional. */
   instagramHandle String?  @map("instagram_handle")
+  /**
+   * Cores da marca (hex, ex. "#0f172a") — usadas nos templates de vídeo
+   * (ver VIDEO_CARD_STYLES). Escura e clara: se não configuradas, os
+   * templates caem num padrão neutro. brandColorAccent é opcional e ainda
+   * não é usada em nenhum template.
+   */
+  brandColorDark   String? @map("brand_color_dark")
+  brandColorLight  String? @map("brand_color_light")
+  brandColorAccent String? @map("brand_color_accent")
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   users         User[]
@@ -240,6 +249,12 @@ model PostVersion {
   imageSuggestions Json?    @map("image_suggestions")
   /** Vídeo original escolhido (post de vídeo, em vez de foto). */
   selectedVideoId  String?  @map("selected_video_id") @db.Uuid
+  /**
+   * Template fixo do cartão de título do vídeo ('classic' | 'light' | 'bold').
+   * Diferente do ArtTemplate (foto): são só 3 estilos prontos no código, sem
+   * builder — por isso é string livre em vez de relation.
+   */
+  videoTemplate    String   @default("classic") @map("video_template")
   /**
    * Vídeo final já renderizado (texto com animação de entrada/saída
    * gravado nos frames) — é ESTE que vai pro Instagram, nunca o original.

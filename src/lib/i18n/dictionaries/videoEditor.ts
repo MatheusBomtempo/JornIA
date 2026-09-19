@@ -15,6 +15,13 @@ export const videoEditor = {
     heightHint: "As faixas em amarelo são o que a interface do Reels cobre — o texto nunca passa delas.",
     cropWarningPrefix: "Seu vídeo é",
     cropWarningSuffix: " e será enquadrado em 9:16 (vertical): cerca de {pct}% da imagem fica de fora.",
+    letterboxInfoPrefix: "Seu vídeo é",
+    letterboxInfoSuffix:
+      " (deitado): ele aparece inteiro e centralizado, com um fundo desfocado preenchendo o espaço em volta — nada é cortado.",
+    templateLabel: "Estilo do cartão de título",
+    templateClassic: "Clássico",
+    templateLight: "Claro",
+    templateBold: "Destaque",
   },
   en: {
     titleFieldLabel: "Text that animates into the video",
@@ -32,5 +39,12 @@ export const videoEditor = {
     heightHint: "The yellow bands are what the Reels interface covers — the text never crosses them.",
     cropWarningPrefix: "Your video is",
     cropWarningSuffix: " and will be framed to 9:16 (vertical): about {pct}% of the image is cut off.",
+    letterboxInfoPrefix: "Your video is",
+    letterboxInfoSuffix:
+      " (landscape): it shows whole and centered, with a blurred background filling the space around it — nothing is cropped.",
+    templateLabel: "Title card style",
+    templateClassic: "Classic",
+    templateLight: "Light",
+    templateBold: "Bold",
   },
 };

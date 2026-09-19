@@ -93,8 +93,8 @@ export const addVideoSchema = z.object({
 
 /**
  * Salva a escolha de vídeo + título (o texto que entra animado por cima) e
- * dispara o render final — equivalente ao saveArtSchema, mas sem template/
- * foto/posição: o vídeo não tem slots, só o cartão de título.
+ * dispara o render final — equivalente ao saveArtSchema, mas sem foto/slots:
+ * o vídeo só tem o cartão de título, num dos 3 estilos fixos (videoTemplate).
  */
 export const saveVideoSchema = z.object({
   selectedVideoId: z.string().uuid(),
@@ -102,6 +102,8 @@ export const saveVideoSchema = z.object({
   /** Ajuste vertical do bloco no editor (px em escala 1080x1920). O render
    *  trava o resultado dentro da área segura do Reels de qualquer jeito. */
   titleOffsetY: z.number().default(0),
+  /** Estilo fixo do cartão de título — ver VIDEO_CARD_STYLES. */
+  videoTemplate: z.enum(["classic", "light", "bold"]).default("classic"),
 });
 
 export const editVersionSchema = z
@@ -159,6 +161,10 @@ export const updateUserSchema = z.object({
 });
 
 // ── Empresa (onboarding) ──────────────────────────────────────
+const hexColorSchema = z
+  .string()
+  .regex(/^#[0-9a-fA-F]{6}$/, "Use uma cor no formato #rrggbb.");
+
 export const createCompanySchema = z.object({
   name: z.string().trim().min(1, "Informe o nome da empresa."),
   logoUrl: z.string().url().optional(),
@@ -170,6 +176,10 @@ export const updateCompanySchema = z.object({
   name: z.string().trim().min(1, "Informe o nome da empresa.").optional(),
   logoUrl: z.string().url().nullable().optional(),
   instagramHandle: z.string().trim().max(60).nullable().optional(),
+  /** Cores da marca — usadas nos templates de vídeo. Ver VIDEO_CARD_STYLES. */
+  brandColorDark: hexColorSchema.nullable().optional(),
+  brandColorLight: hexColorSchema.nullable().optional(),
+  brandColorAccent: hexColorSchema.nullable().optional(),
 });
 
 // ── Configurações do app ─────────────────────────────────────

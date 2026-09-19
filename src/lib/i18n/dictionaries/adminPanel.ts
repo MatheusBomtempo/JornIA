@@ -18,6 +18,11 @@ export const adminPanel = {
       saved: "Empresa atualizada.",
       invalidLogoType: "Aqui só entra imagem (JPEG, PNG ou WebP).",
       logoTooLargePrefix: "A logo passa de",
+      colorsTitle: "Cores da marca",
+      colorsHint: "Usadas nos templates de vídeo (estilos \"Claro\" e \"Destaque\").",
+      darkColorLabel: "Cor mais escura",
+      lightColorLabel: "Cor mais clara",
+      accentColorLabel: "Cor adicional (opcional)",
     },
     styleSection: {
       infoPrefix: "Cadastre ",
@@ -148,6 +153,11 @@ export const adminPanel = {
       saved: "Company updated.",
       invalidLogoType: "Only images are allowed here (JPEG, PNG, or WebP).",
       logoTooLargePrefix: "The logo is larger than",
+      colorsTitle: "Brand colors",
+      colorsHint: "Used in the video templates (\"Light\" and \"Bold\" styles).",
+      darkColorLabel: "Darkest color",
+      lightColorLabel: "Lightest color",
+      accentColorLabel: "Extra color (optional)",
     },
     styleSection: {
       infoPrefix: "Register ",

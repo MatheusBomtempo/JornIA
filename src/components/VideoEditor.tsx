@@ -15,13 +15,28 @@ import {
   CARD_WIDTH,
   CARD_PADDING_X,
   CARD_PADDING_Y,
-  CARD_RADIUS,
   TITLE_FONT_SIZE,
   TITLE_LINE_HEIGHT,
   LOGO_HEIGHT,
   LOGO_GAP,
   cropLossRatio,
+  needsBlurBackground,
+  buildVideoCardStyles,
+  DEFAULT_VIDEO_TEMPLATE,
+  type VideoCardStyle,
+  type CompanyBrandColors,
 } from "@/lib/render/video-layout";
+
+/** Cor de fundo do cartão como rgba — só a caixa fica translúcida, o texto não. */
+function cardBackground(style: VideoCardStyle): string {
+  const hex = style.cardFill.replace("#", "");
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${style.cardOpacity})`;
+}
+
+const VIDEO_TEMPLATE_ORDER: VideoCardStyle["id"][] = ["classic", "light", "bold"];
 
 export interface EditorVideo {
   id: string;
@@ -35,10 +50,12 @@ interface Props {
   postId: string;
   videos: EditorVideo[];
   companyLogoUrl?: string | null;
+  companyBrandColors?: CompanyBrandColors;
   initial?: {
     selectedVideoId?: string | null;
     title?: string | null;
     titleOffsetY?: number | null;
+    videoTemplate?: string | null;
   };
   onSaved?: () => void;
 }
@@ -49,27 +66,43 @@ const CROP_WARN_RATIO = 0.25;
 const OFFSET_RANGE = 420;
 
 /**
- * Equivalente ao ArtEditor pro post de vídeo: sem slots/template — só
- * escolher o vídeo, o texto que entra animado e a altura do bloco. O preview
- * usa um frame REAL do meio do vídeo (já cortado em 9:16 pelo servidor) com
- * as réguas da área segura do Reels por cima, então o que aparece aqui é
- * onde o texto de fato cai no vídeo renderizado.
+ * Equivalente ao ArtEditor pro post de vídeo: sem slots de foto — só
+ * escolher o vídeo, o texto que entra animado, o estilo do cartão (3 fixos,
+ * ver buildVideoCardStyles) e a altura do bloco. O preview usa um frame REAL do
+ * meio do vídeo (já no mesmo enquadramento 9:16 do servidor, fundo desfocado
+ * incluso pra vídeos deitados) com as réguas da área segura do Reels por
+ * cima, então o que aparece aqui é onde o texto de fato cai no vídeo
+ * renderizado.
  */
-export function VideoEditor({ postId, videos, companyLogoUrl, initial, onSaved }: Props) {
+export function VideoEditor({
+  postId,
+  videos,
+  companyLogoUrl,
+  companyBrandColors,
+  initial,
+  onSaved,
+}: Props) {
   const { dict } = useLocale();
   const [videoId, setVideoId] = useState(
     initial?.selectedVideoId ?? videos[0]?.id ?? "",
   );
   const [title, setTitle] = useState(initial?.title ?? "");
   const [offsetY, setOffsetY] = useState(initial?.titleOffsetY ?? 0);
+  const [videoTemplate, setVideoTemplate] = useState<VideoCardStyle["id"]>(
+    (initial?.videoTemplate as VideoCardStyle["id"]) ?? DEFAULT_VIDEO_TEMPLATE,
+  );
   const [showGuides, setShowGuides] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const video = videos.find((v) => v.id === videoId) ?? videos[0];
+  const cardStyles = buildVideoCardStyles(companyBrandColors);
+  const style = cardStyles[videoTemplate];
 
   const cropLoss =
     video?.width && video?.height ? cropLossRatio(video.width, video.height) : 0;
+  const isLandscape =
+    video?.width && video?.height ? needsBlurBackground(video.width, video.height) : false;
 
   async function save() {
     if (!video) return;
@@ -80,6 +113,7 @@ export function VideoEditor({ postId, videos, companyLogoUrl, initial, onSaved }
         selectedVideoId: video.id,
         title: title.slice(0, TITLE_MAX),
         titleOffsetY: offsetY,
+        videoTemplate,
       });
       onSaved?.();
     } catch (err) {
@@ -161,15 +195,31 @@ export function VideoEditor({ postId, videos, companyLogoUrl, initial, onSaved }
             }}
           >
             <div
-              className="w-full bg-black/50 text-center font-art font-bold leading-tight text-white"
+              className="w-full overflow-hidden text-center font-art font-bold leading-tight transition-colors duration-200"
               style={{
-                borderRadius: `${(CARD_RADIUS / VIDEO_WIDTH) * 100}cqw`,
-                padding: `${(CARD_PADDING_Y / VIDEO_HEIGHT) * 100}% ${(CARD_PADDING_X / VIDEO_WIDTH) * 100}%`,
-                fontSize: `${(TITLE_FONT_SIZE / VIDEO_WIDTH) * 100}cqw`,
-                lineHeight: TITLE_LINE_HEIGHT,
+                backgroundColor: cardBackground(style),
+                borderRadius: `${(style.cardRadius / VIDEO_WIDTH) * 100}cqw`,
+                border: style.cardBorder ? `1px solid ${style.cardBorder}` : undefined,
               }}
             >
-              {title || dict.videoEditor.titleFieldPlaceholder}
+              {style.accentColor && style.accentHeight > 0 && (
+                <div
+                  style={{
+                    height: `${(style.accentHeight / VIDEO_HEIGHT) * 100}cqh`,
+                    backgroundColor: style.accentColor,
+                  }}
+                />
+              )}
+              <div
+                style={{
+                  color: style.textColor,
+                  padding: `${(CARD_PADDING_Y / VIDEO_HEIGHT) * 100}% ${(CARD_PADDING_X / VIDEO_WIDTH) * 100}%`,
+                  fontSize: `${(TITLE_FONT_SIZE / VIDEO_WIDTH) * 100}cqw`,
+                  lineHeight: TITLE_LINE_HEIGHT,
+                }}
+              >
+                {title || dict.videoEditor.titleFieldPlaceholder}
+              </div>
             </div>
             {companyLogoUrl && (
               <div style={{ marginTop: `${(LOGO_GAP / VIDEO_HEIGHT) * 100}%` }}>
@@ -188,14 +238,21 @@ export function VideoEditor({ postId, videos, companyLogoUrl, initial, onSaved }
 
       <p className="text-center text-xs text-muted">{dict.videoEditor.previewHint}</p>
 
-      {cropLoss > CROP_WARN_RATIO && (
+      {isLandscape ? (
         <p className="alert-info">
-          {dict.videoEditor.cropWarningPrefix} {video?.width}×{video?.height}
-          {dict.videoEditor.cropWarningSuffix.replace(
-            "{pct}",
-            String(Math.round(cropLoss * 100)),
-          )}
+          {dict.videoEditor.letterboxInfoPrefix} {video?.width}×{video?.height}
+          {dict.videoEditor.letterboxInfoSuffix}
         </p>
+      ) : (
+        cropLoss > CROP_WARN_RATIO && (
+          <p className="alert-info">
+            {dict.videoEditor.cropWarningPrefix} {video?.width}×{video?.height}
+            {dict.videoEditor.cropWarningSuffix.replace(
+              "{pct}",
+              String(Math.round(cropLoss * 100)),
+            )}
+          </p>
+        )
       )}
 
       <div className="card-soft p-3">
@@ -219,9 +276,74 @@ export function VideoEditor({ postId, videos, companyLogoUrl, initial, onSaved }
           step={4}
           value={offsetY}
           onChange={(e) => setOffsetY(Number(e.target.value))}
-          className="h-2 w-full cursor-pointer appearance-none rounded-full bg-line accent-brand-500"
+          className={`
+            h-3 w-full cursor-pointer appearance-none rounded-full bg-white/20
+            [&::-webkit-slider-thumb]:h-7 [&::-webkit-slider-thumb]:w-7
+            [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full
+            [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white
+            [&::-webkit-slider-thumb]:bg-brand-500 [&::-webkit-slider-thumb]:shadow-md
+            [&::-webkit-slider-thumb]:cursor-pointer
+            [&::-moz-range-thumb]:h-7 [&::-moz-range-thumb]:w-7 [&::-moz-range-thumb]:appearance-none
+            [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2
+            [&::-moz-range-thumb]:border-white [&::-moz-range-thumb]:bg-brand-500
+            [&::-moz-range-thumb]:shadow-md [&::-moz-range-thumb]:cursor-pointer
+          `}
         />
         <p className="hint">{dict.videoEditor.heightHint}</p>
+      </div>
+
+      <div>
+        <label className="label">{dict.videoEditor.templateLabel}</label>
+        <div className="grid grid-cols-3 gap-2">
+          {VIDEO_TEMPLATE_ORDER.map((id) => {
+            const s = cardStyles[id];
+            const active = id === videoTemplate;
+            const label =
+              id === "classic"
+                ? dict.videoEditor.templateClassic
+                : id === "light"
+                  ? dict.videoEditor.templateLight
+                  : dict.videoEditor.templateBold;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setVideoTemplate(id)}
+                aria-pressed={active}
+                className={`overflow-hidden rounded-xl border-2 bg-gradient-to-b from-slate-600 to-slate-900 transition-all ${
+                  active
+                    ? "border-brand-500 ring-2 ring-brand-500/40"
+                    : "border-line hover:border-brand-500/50"
+                }`}
+              >
+                <div className="flex aspect-[9/16] w-full items-end p-2">
+                  <div
+                    className="w-full overflow-hidden text-center text-[7px] font-bold leading-tight"
+                    style={{
+                      backgroundColor: cardBackground(s),
+                      borderRadius: `${s.cardRadius / 6}px`,
+                      border: s.cardBorder ? `1px solid ${s.cardBorder}` : undefined,
+                    }}
+                  >
+                    {s.accentColor && s.accentHeight > 0 && (
+                      <div style={{ height: 2, backgroundColor: s.accentColor }} />
+                    )}
+                    <div style={{ color: s.textColor, padding: "5px 3px" }}>
+                      {dict.videoEditor.titleFieldPlaceholder}
+                    </div>
+                  </div>
+                </div>
+                <div
+                  className={`truncate px-1.5 py-1.5 text-center text-[11px] font-medium leading-tight ${
+                    active ? "text-brand-300" : "text-muted"
+                  }`}
+                >
+                  {label}
+                </div>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {videos.length > 1 && (
