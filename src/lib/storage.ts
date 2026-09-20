@@ -15,12 +15,26 @@ export interface PutResult {
   url: string;
 }
 
+export interface PresignedPut {
+  /** URL temporária (PUT direto) — o navegador manda o arquivo pra cá, sem passar pela function. */
+  uploadUrl: string;
+  /** URL pública final do objeto, já disponível antes do upload terminar. */
+  publicUrl: string;
+  key: string;
+}
+
 export interface StorageBackend {
   put(key: string, body: Buffer, contentType: string): Promise<PutResult>;
   /** Remove o objeto (idempotente — não deve lançar se já não existir). */
   delete(key: string): Promise<void>;
   /** Extrai a key a partir de uma URL pública, ou null se a URL não pertence a este backend. */
   keyFromUrl(url: string): string | null;
+  /**
+   * URL de upload direto (PUT), sem passar pela function — só backends com
+   * um endpoint HTTP de verdade (S3/R2) suportam. `null` = backend não
+   * suporta (LocalStorage), quem chamou cai de volta pro upload via /api/upload.
+   */
+  presignPut(key: string, contentType: string): Promise<PresignedPut | null>;
 }
 
 // ── Local (dev) ──────────────────────────────────────────────
@@ -49,6 +63,11 @@ class LocalStorage implements StorageBackend {
   keyFromUrl(url: string): string | null {
     const prefix = this.prefix();
     return url.startsWith(prefix) ? url.slice(prefix.length) : null;
+  }
+
+  /** Sem endpoint HTTP pra assinar — não tem como fazer upload direto num disco local. */
+  async presignPut(): Promise<PresignedPut | null> {
+    return null;
   }
 }
 
@@ -106,6 +125,36 @@ class S3Storage implements StorageBackend {
     if (!base || !url.startsWith(`${base}/`)) return null;
     return url.slice(base.length + 1);
   }
+
+  /**
+   * URL assinada de PUT direto no bucket (5 min de validade) — o navegador
+   * manda o vídeo pra cá sem passar pelo corpo da function, então o teto de
+   * payload da Vercel (bem menor que os 100 MB que o app aceita) nunca entra
+   * em jogo. Precisa de CORS habilitado no bucket pra aceitar PUT a partir
+   * da origem do site (ver README/deploy).
+   */
+  async presignPut(key: string, contentType: string): Promise<PresignedPut | null> {
+    const { PutObjectCommand } = await import("@aws-sdk/client-s3");
+    const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
+    const client = await this.client();
+    const uploadUrl = await getSignedUrl(
+      client,
+      new PutObjectCommand({
+        Bucket: env.storage.s3.bucket,
+        Key: key,
+        ContentType: contentType,
+      }),
+      { expiresIn: 300 },
+    );
+
+    const base = env.storage.s3.publicUrl?.replace(/\/$/, "");
+    if (!base) {
+      throw new Error(
+        "S3_PUBLIC_URL não configurado — necessário para a URL pública da arte.",
+      );
+    }
+    return { uploadUrl, publicUrl: `${base}/${key}`, key };
+  }
 }
 
 let backend: StorageBackend | null = null;
@@ -123,6 +172,11 @@ export function putObject(
   contentType: string,
 ): Promise<PutResult> {
   return getStorage().put(key, body, contentType);
+}
+
+/** Helper de alto nível para pedir uma URL de upload direto (ver StorageBackend.presignPut). */
+export function presignPut(key: string, contentType: string): Promise<PresignedPut | null> {
+  return getStorage().presignPut(key, contentType);
 }
 
 /** Apaga o objeto por trás de uma URL pública salva no banco. Não lança se a URL não pertencer ao backend configurado — só avisa (ex.: sobrou de uma migração de provider). */

@@ -30,6 +30,36 @@ function freePhotosUrl(query: string): string {
   return `https://www.pexels.com/search/${encodeURIComponent(query)}/`;
 }
 
+/**
+ * Sobe o vídeo pro storage. Tenta primeiro PUT direto no bucket (URL
+ * assinada) — o corpo nunca passa pela function, então o teto de payload
+ * da Vercel (bem menor que os 100 MB que o app aceita) não entra em jogo.
+ * Em storage local (dev) não tem URL assinada: cai de volta pro upload via
+ * /api/upload de sempre.
+ */
+async function uploadVideoFile(file: File): Promise<string> {
+  const presign = await apiPost<{ uploadUrl: string | null; publicUrl?: string }>(
+    "/api/upload/presign",
+    { contentType: file.type },
+  );
+
+  if (presign.uploadUrl && presign.publicUrl) {
+    const res = await fetch(presign.uploadUrl, {
+      method: "PUT",
+      body: file,
+      headers: { "Content-Type": file.type },
+    });
+    if (!res.ok) throw new Error(`Falha ao enviar o vídeo (${res.status}).`);
+    return presign.publicUrl;
+  }
+
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("kind", "video");
+  const up = await apiPost<{ url: string }>("/api/upload", fd);
+  return up.url;
+}
+
 interface Version {
   id: string;
   versionNumber: number;
@@ -230,11 +260,8 @@ export function PostWorkspace({ user, post, templates, company }: Props) {
       setVideoError(null);
       setVideoBusy(true);
       try {
-        const fd = new FormData();
-        fd.append("file", file);
-        fd.append("kind", "video");
-        const up = await apiPost<{ url: string }>("/api/upload", fd);
-        await apiPost(`/api/posts/${post.id}/videos`, { storageUrl: up.url });
+        const storageUrl = await uploadVideoFile(file);
+        await apiPost(`/api/posts/${post.id}/videos`, { storageUrl });
         router.refresh();
       } catch (err) {
         setVideoError((err as Error).message);
