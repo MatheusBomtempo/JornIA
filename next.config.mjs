@@ -24,8 +24,15 @@ const nextConfig = {
   // detecta esse acesso sozinho e deixava a fonte de fora do bundle da
   // função serverless (funcionava local, quebrava só na Vercel). Mesmo
   // problema com o binário do ffmpeg (resolvido em runtime pelo installer).
+  //
+  // "/**/*" (não só "/api/**/*"): services/posts.ts importa render/video.ts
+  // no topo do arquivo, e páginas normais (ex.: /dashboard, /posts/[id])
+  // importam services/posts.ts pra listar/carregar posts — então o require
+  // do @ffprobe-installer/ffprobe também entra no bundle DESSAS páginas, não
+  // só das rotas /api. Escopo só em /api deixava o /dashboard quebrado em
+  // produção com "Cannot find module '@ffprobe-installer/linux-x64/ffprobe'".
   outputFileTracingIncludes: {
-    "/api/**/*": [
+    "/**/*": [
       "./node_modules/@fontsource/poppins/files/**",
       "./node_modules/@ffmpeg-installer/**",
       "./node_modules/@ffprobe-installer/**",
