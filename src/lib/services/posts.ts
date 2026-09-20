@@ -779,6 +779,9 @@ export function listPosts(companyId: string, opts: { status?: string; mineFor?: 
           renderedArtUrl: true,
           renderedVideoUrl: true,
           versionNumber: true,
+          // Só o frame estático — o card do feed nunca precisa baixar o
+          // vídeo renderizado inteiro (pesado) só pra mostrar uma miniatura.
+          selectedVideo: { select: { previewFrameUrl: true } },
           decisions: {
             where: { decision: "approved" },
             select: { reviewerId: true },

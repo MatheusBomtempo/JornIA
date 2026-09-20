@@ -88,15 +88,32 @@ export default async function DashboardPage() {
                   <DeletePostButton postId={post.id} />
                 )}
                 <div className="aspect-square bg-black">
-                  {v?.renderedVideoUrl ? (
-                    <video
-                      src={v.renderedVideoUrl}
-                      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
-                      muted
-                      loop
-                      playsInline
-                      preload="metadata"
-                    />
+                  {v?.selectedVideo?.previewFrameUrl ? (
+                    // Card do feed é só uma miniatura — usa o frame estático
+                    // do vídeo em vez do MP4 renderizado inteiro (evita
+                    // baixar um arquivo pesado só pra preencher uma célula
+                    // da grade). Mesmo frame que aparece no editor.
+                    <div className="relative h-full w-full">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={v.selectedVideo.previewFrameUrl}
+                        alt={v.title ?? dict.instagramPreview.artAlt}
+                        className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+                      />
+                      <span
+                        aria-hidden
+                        className="absolute bottom-2 right-2 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-xs text-white backdrop-blur-sm"
+                      >
+                        ▶
+                      </span>
+                    </div>
+                  ) : v?.renderedVideoUrl ? (
+                    // Vídeo já renderizado mas sem frame de prévia (raro —
+                    // falha na extração): nunca embute o vídeo aqui, só um
+                    // indicador visual de que é um post de vídeo.
+                    <div className="flex h-full items-center justify-center text-2xl text-faint" aria-hidden>
+                      ▶
+                    </div>
                   ) : v?.renderedArtUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
