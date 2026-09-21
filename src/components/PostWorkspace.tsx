@@ -261,7 +261,13 @@ export function PostWorkspace({ user, post, templates, company }: Props) {
       setVideoBusy(true);
       try {
         const storageUrl = await uploadVideoFile(file);
-        await apiPost(`/api/posts/${post.id}/videos`, { storageUrl });
+        const res = await apiPost<{ previewError?: string | null }>(
+          `/api/posts/${post.id}/videos`,
+          { storageUrl },
+        );
+        // O vídeo entra mesmo sem prévia, mas o motivo aparece na tela em vez
+        // de ficar só no log do servidor.
+        if (res.previewError) setVideoError(res.previewError);
         router.refresh();
       } catch (err) {
         setVideoError((err as Error).message);

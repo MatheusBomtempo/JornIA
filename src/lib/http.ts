@@ -47,8 +47,15 @@ export function handleError(err: unknown): NextResponse {
     );
   }
   console.error("[JornAI] Erro não tratado:", err);
+  // Devolve a mensagem real (não só "erro interno"): todas as rotas exigem
+  // login, e sem isso qualquer falha de produção vira caça ao log no painel
+  // da Vercel — que corta mensagem longa justo quando ela importa (ex.: o
+  // stderr do ffmpeg no render do vídeo).
   return NextResponse.json(
-    { error: "Erro interno do servidor" },
+    {
+      error: "Erro interno do servidor",
+      details: err instanceof Error ? err.message : String(err),
+    },
     { status: 500 },
   );
 }

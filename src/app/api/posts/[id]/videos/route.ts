@@ -14,7 +14,7 @@ export const POST = route(
     const user = await requireCompanyUser();
     const { id } = await ctx.params;
     const input = addVideoSchema.parse(await req.json());
-    const { video, post } = await addVideoToPost(user, id, input);
-    return created({ video, post });
+    const { video, previewError, post } = await addVideoToPost(user, id, input);
+    return created({ video, previewError, post });
   },
 );

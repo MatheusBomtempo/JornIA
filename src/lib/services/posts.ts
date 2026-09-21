@@ -343,6 +343,10 @@ export async function addVideoToPost(
   // falhar, o vídeo entra assim mesmo — o editor só fica sem o preview.
   let previewFrameUrl: string | null = null;
   let probe: { durationSec: number; width: number; height: number } | null = null;
+  // Motivo da falha vai junto na resposta (não só no log do servidor): sem
+  // isso o editor só mostra "sem prévia" e a causa real fica presa no painel
+  // da Vercel.
+  let previewError: string | null = null;
   try {
     const frame = await extractAndStoreMiddleFrame(
       input.storageUrl,
@@ -351,6 +355,7 @@ export async function addVideoToPost(
     previewFrameUrl = frame.url;
     probe = frame.probe;
   } catch (err) {
+    previewError = err instanceof Error ? err.message : String(err);
     console.error("[JornAI] Falha ao extrair frame de preview do vídeo:", err);
   }
 
@@ -366,7 +371,7 @@ export async function addVideoToPost(
     },
   });
 
-  return { video, post: await getPostDetail(postId) };
+  return { video, previewError, post: await getPostDetail(postId) };
 }
 
 // ── 3) Regenerar (novo ciclo de IA, nova versão) ─────────────
