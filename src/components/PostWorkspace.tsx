@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { apiGet, apiPost, apiPatch } from "@/lib/api-client";
+import { apiGet, apiPost, apiPatch, uploadWithProgress, type UploadProgress } from "@/lib/api-client";
 import { ArtEditor, type EditorTemplate, type EditorPhoto } from "./ArtEditor";
 import { VideoEditor, type EditorVideo } from "./VideoEditor";
 import { InstagramPreview } from "./InstagramPreview";
@@ -11,6 +11,7 @@ import { StatusBadge } from "./StatusBadge";
 import { Stepper } from "./Stepper";
 import { BusyLabel, useElapsedSeconds } from "./Spinner";
 import { useLocale } from "./LocaleProvider";
+import { useActionOverlay, type RunContext } from "./ActionOverlay";
 import {
   POST_STATUS,
   PEER_APPROVALS_NEEDED,
@@ -35,29 +36,42 @@ function freePhotosUrl(query: string): string {
  * assinada) — o corpo nunca passa pela function, então o teto de payload
  * da Vercel (bem menor que os 100 MB que o app aceita) não entra em jogo.
  * Em storage local (dev) não tem URL assinada: cai de volta pro upload via
- * /api/upload de sempre.
+ * /api/upload de sempre. Nos dois caminhos `onProgress` recebe os bytes
+ * enviados — é o que alimenta a barra do modal.
  */
-async function uploadVideoFile(file: File): Promise<string> {
+async function uploadVideoFile(file: File, onProgress: UploadProgress): Promise<string> {
   const presign = await apiPost<{ uploadUrl: string | null; publicUrl?: string }>(
     "/api/upload/presign",
     { contentType: file.type },
   );
 
   if (presign.uploadUrl && presign.publicUrl) {
-    const res = await fetch(presign.uploadUrl, {
-      method: "PUT",
-      body: file,
-      headers: { "Content-Type": file.type },
-    });
-    if (!res.ok) throw new Error(`Falha ao enviar o vídeo (${res.status}).`);
+    try {
+      await uploadWithProgress(
+        presign.uploadUrl,
+        { method: "PUT", body: file, headers: { "Content-Type": file.type } },
+        onProgress,
+      );
+    } catch (err) {
+      throw new Error(`Falha ao enviar o vídeo pro storage: ${(err as Error).message}`);
+    }
     return presign.publicUrl;
   }
 
   const fd = new FormData();
   fd.append("file", file);
   fd.append("kind", "video");
-  const up = await apiPost<{ url: string }>("/api/upload", fd);
+  const up = await uploadWithProgress<{ url: string }>(
+    "/api/upload",
+    { method: "POST", body: fd },
+    onProgress,
+  );
   return up.url;
+}
+
+/** "12,4 MB" no idioma da interface. */
+function formatMB(bytes: number, locale: string): string {
+  return `${(bytes / 1048576).toLocaleString(locale, { maximumFractionDigits: 1 })} MB`;
 }
 
 interface Version {
@@ -122,6 +136,7 @@ type Panel = null | "rewrite" | "reject" | "text";
 export function PostWorkspace({ user, post, templates, company }: Props) {
   const router = useRouter();
   const { dict, locale } = useLocale();
+  const { run: runAction } = useActionOverlay();
   const dateLocale = locale === "pt" ? "pt-BR" : "en-US";
   const STEP_LABELS = [dict.postWorkspace.steps.text, dict.postWorkspace.steps.image, dict.postWorkspace.steps.review];
   const current = post.versions[0];
@@ -171,7 +186,6 @@ export function PostWorkspace({ user, post, templates, company }: Props) {
     instagramCaption: current?.instagramCaption ?? "",
   });
   const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const elapsed = useElapsedSeconds(!!busy);
 
   // Foto decidida DEPOIS de gerar o texto (achou uma melhor, baixou do
@@ -182,6 +196,19 @@ export function PostWorkspace({ user, post, templates, company }: Props) {
   const [photoDragging, setPhotoDragging] = useState(false);
   const [lastAddedPhotoId, setLastAddedPhotoId] = useState<string | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
+
+  // Liga os bytes do XHR à barra do modal: "42% · 12,4 MB de 29,8 MB".
+  const uploadProgress = useCallback(
+    (progress: RunContext["progress"]): UploadProgress =>
+      (sent, total) =>
+        progress(
+          sent / total,
+          dict.postWorkspace.upload.progressOf
+            .replace("{sent}", formatMB(sent, dateLocale))
+            .replace("{total}", formatMB(total, dateLocale)),
+        ),
+    [dict, dateLocale],
+  );
 
   const addPhoto = useCallback(
     async (file: File | undefined | null) => {
@@ -198,23 +225,37 @@ export function PostWorkspace({ user, post, templates, company }: Props) {
       }
       setPhotoError(null);
       setPhotoBusy(true);
-      try {
-        const fd = new FormData();
-        fd.append("file", file);
-        const up = await apiPost<{ url: string }>("/api/upload", fd);
-        const { photo } = await apiPost<{ photo: { id: string } }>(
-          `/api/posts/${post.id}/photos`,
-          { storageUrl: up.url },
-        );
-        setLastAddedPhotoId(photo.id);
-        router.refresh();
-      } catch (err) {
-        setPhotoError((err as Error).message);
-      } finally {
-        setPhotoBusy(false);
-      }
+      // Upload vai pro modal com barra de progresso — no servidor fora do
+      // país até uma foto leva alguns segundos, e o "Enviando…" da zona de
+      // drop some do campo de visão no celular.
+      const result = await runAction({
+        title: dict.postWorkspace.busy.uploadingPhoto,
+        success: dict.postWorkspace.done.photoAdded,
+        fn: async ({ log, progress }) => {
+          // Barra em 0% desde já: o aviso de "não saia do app" depende dela.
+          progress(0);
+          const fd = new FormData();
+          fd.append("file", file);
+          const up = await uploadWithProgress<{ url: string }>(
+            "/api/upload",
+            { method: "POST", body: fd },
+            uploadProgress(progress),
+          );
+          progress(null);
+          log(dict.postWorkspace.upload.photoOnServer);
+          const { photo } = await apiPost<{ photo: { id: string } }>(
+            `/api/posts/${post.id}/photos`,
+            { storageUrl: up.url },
+          );
+          return photo;
+        },
+      });
+      setPhotoBusy(false);
+      if (!result.ok) return;
+      setLastAddedPhotoId(result.value.id);
+      router.refresh();
     },
-    [post.id, router, dict],
+    [post.id, router, dict, runAction, uploadProgress],
   );
 
   // Busca embutida no Pexels (ver PhotoPickerModal) — string = query aberta
@@ -223,18 +264,30 @@ export function PostWorkspace({ user, post, templates, company }: Props) {
   const [photoPickerQuery, setPhotoPickerQuery] = useState<string | null>(null);
 
   // Mesmo final do addPhoto (anexa e recarrega), mas a partir de uma foto já
-  // escolhida no picker em vez de um File do input.
+  // escolhida no picker em vez de um File do input. O download acontece no
+  // servidor, então não tem barra — só o log e o contador. Devolve se deu
+  // certo pro picker decidir se fecha.
   const importPexelsPhoto = useCallback(
-    async (downloadUrl: string) => {
-      const up = await apiPost<{ url: string }>("/api/photo-search/import", { downloadUrl });
-      const { photo } = await apiPost<{ photo: { id: string } }>(
-        `/api/posts/${post.id}/photos`,
-        { storageUrl: up.url },
-      );
-      setLastAddedPhotoId(photo.id);
+    async (downloadUrl: string): Promise<boolean> => {
+      const result = await runAction({
+        title: dict.postWorkspace.busy.importingPhoto,
+        success: dict.postWorkspace.done.photoAdded,
+        fn: async ({ log }) => {
+          const up = await apiPost<{ url: string }>("/api/photo-search/import", { downloadUrl });
+          log(dict.postWorkspace.upload.photoImported);
+          const { photo } = await apiPost<{ photo: { id: string } }>(
+            `/api/posts/${post.id}/photos`,
+            { storageUrl: up.url },
+          );
+          return photo;
+        },
+      });
+      if (!result.ok) return false;
+      setLastAddedPhotoId(result.value.id);
       router.refresh();
+      return true;
     },
-    [post.id, router],
+    [post.id, router, dict, runAction],
   );
 
   // Mesma ideia do addPhoto, pro vídeo — anexa e recarrega; qual usar
@@ -259,60 +312,65 @@ export function PostWorkspace({ user, post, templates, company }: Props) {
       }
       setVideoError(null);
       setVideoBusy(true);
-      try {
-        const storageUrl = await uploadVideoFile(file);
-        const res = await apiPost<{ previewError?: string | null }>(
-          `/api/posts/${post.id}/videos`,
-          { storageUrl },
-        );
-        // O vídeo entra mesmo sem prévia, mas o motivo aparece na tela em vez
-        // de ficar só no log do servidor.
-        if (res.previewError) setVideoError(res.previewError);
-        router.refresh();
-      } catch (err) {
-        setVideoError((err as Error).message);
-      } finally {
-        setVideoBusy(false);
-      }
+      // Barra de progresso durante o upload (a parte lenta com 100 MB pra
+      // fora do país); depois só o log — a prévia é gerada no servidor.
+      const result = await runAction({
+        title: dict.postWorkspace.busy.uploadingVideo,
+        success: dict.postWorkspace.done.videoAdded,
+        fn: async ({ log, progress }) => {
+          progress(0);
+          const storageUrl = await uploadVideoFile(file, uploadProgress(progress));
+          progress(null);
+          log(dict.postWorkspace.upload.videoOnServer);
+          return apiPost<{ previewError?: string | null }>(
+            `/api/posts/${post.id}/videos`,
+            { storageUrl },
+          );
+        },
+      });
+      setVideoBusy(false);
+      if (!result.ok) return;
+      // O vídeo entra mesmo sem prévia, mas o motivo aparece na tela em vez
+      // de ficar só no log do servidor.
+      if (result.value.previewError) setVideoError(result.value.previewError);
+      router.refresh();
     },
-    [post.id, router, dict],
+    [post.id, router, dict, runAction, uploadProgress],
   );
 
-  async function run(label: string, fn: () => Promise<unknown>) {
+  // Loading/erro/sucesso das decisões vão pro modal (ActionOverlay); aqui
+  // só sobra travar os botões e, se deu certo, voltar pro passo natural.
+  async function run(label: string, success: string, fn: () => Promise<unknown>) {
     setBusy(label);
-    setError(null);
-    try {
-      await fn();
-      setPanel(null);
-      setStepOverride(null);
-      router.refresh();
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusy(null);
-    }
+    const result = await runAction({ title: label, success, fn });
+    setBusy(null);
+    if (!result.ok) return;
+    setPanel(null);
+    setStepOverride(null);
+    router.refresh();
   }
 
   const approve = () =>
     run(
       isPeerReviewer ? dict.postWorkspace.busy.registeringApproval : dict.postWorkspace.busy.publishing,
+      isPeerReviewer ? dict.postWorkspace.done.approvalRegistered : dict.postWorkspace.done.published,
       () => apiPost(`/api/posts/${post.id}/versions/${current.id}/approve`),
     );
 
   const reject = () =>
-    run(dict.postWorkspace.busy.rejecting, () =>
+    run(dict.postWorkspace.busy.rejecting, dict.postWorkspace.done.rejected, () =>
       apiPost(`/api/posts/${post.id}/versions/${current.id}/reject`, { reason }),
     );
 
   const rewrite = () =>
-    run(dict.postWorkspace.busy.rewriting, () =>
+    run(dict.postWorkspace.busy.rewriting, dict.postWorkspace.done.rewritten, () =>
       apiPost(`/api/posts/${post.id}/regenerate`, {
         guidance: guidance.trim() || undefined,
       }),
     );
 
   const saveText = () =>
-    run(dict.postWorkspace.busy.savingText, () =>
+    run(dict.postWorkspace.busy.savingText, dict.postWorkspace.done.textSaved, () =>
       apiPatch(`/api/posts/${post.id}/versions/${current.id}`, draft),
     );
 
@@ -357,8 +415,6 @@ export function PostWorkspace({ user, post, templates, company }: Props) {
           </div>
         </div>
       )}
-
-      {error && <p className="alert-error">{error}</p>}
 
       {/* ───────────── PASSO 1: TEXTO ───────────── */}
       {step === "text" && (
@@ -1035,7 +1091,7 @@ function PhotoPickerModal({
 }: {
   initialQuery: string;
   onClose: () => void;
-  onPick: (downloadUrl: string) => Promise<void>;
+  onPick: (downloadUrl: string) => Promise<boolean>;
 }) {
   const { dict } = useLocale();
   const t = dict.postWorkspace.photoPicker;
@@ -1074,16 +1130,14 @@ function PhotoPickerModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Erro do import aparece no modal de progresso (ActionOverlay), não aqui —
+  // se falhou, o picker só volta ao normal pra pessoa escolher outra.
   async function pick(photo: PexelsPhoto) {
     setPickingId(photo.id);
     setError(null);
-    try {
-      await onPick(photo.downloadUrl);
-      onClose();
-    } catch (err) {
-      setError(`${t.importError}${(err as Error).message}`);
-      setPickingId(null);
-    }
+    const ok = await onPick(photo.downloadUrl);
+    if (ok) onClose();
+    else setPickingId(null);
   }
 
   return createPortal(

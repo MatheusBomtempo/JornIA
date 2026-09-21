@@ -8,6 +8,7 @@ import { BusyLabel, useElapsedSeconds } from "./Spinner";
 import type { Credit } from "@/lib/domain";
 import { clearDraft, loadDraft, saveDraft } from "@/lib/idb-draft";
 import { useLocale } from "./LocaleProvider";
+import { useActionOverlay } from "./ActionOverlay";
 
 const URL_ONLY = /^https?:\/\/\S+$/i;
 const MAX_DOC_MB = 20;
@@ -38,6 +39,7 @@ interface CaptureDraft {
 export function CaptureForm() {
   const router = useRouter();
   const { dict, locale } = useLocale();
+  const { run } = useActionOverlay();
   const [content, setContent] = useState("");
   const [doc, setDoc] = useState<AttachedDoc | null>(null);
   const [extracting, setExtracting] = useState(false);
@@ -143,20 +145,28 @@ export function CaptureForm() {
     e.preventDefault();
     if (!canSubmit) return;
     setError(null);
-    try {
-      setBusy(isLink ? dict.captureForm.busy.readingLink : dict.captureForm.busy.generatingText);
-      const { post } = await apiPost<{ post: { id: string } }>("/api/posts", {
-        text: isLink || !trimmed ? undefined : trimmed,
-        url: isLink ? trimmed : undefined,
-        document: doc ? { name: doc.name, text: doc.text, pages: doc.pages } : undefined,
-        credits: credits.filter((c) => c.handle.trim()),
-      });
-      clearDraft(DRAFT_KEY);
-      router.push(`/posts/${post.id}`);
-    } catch (err) {
-      setError((err as Error).message);
+    const label = isLink ? dict.captureForm.busy.readingLink : dict.captureForm.busy.generatingText;
+    setBusy(label);
+    // O modal (ActionOverlay) mostra loading, erro e sucesso; quando dá
+    // certo ele fica aberto até a página da pauta carregar (successDelayMs 0).
+    const result = await run({
+      title: label,
+      success: dict.captureForm.done.textGenerated,
+      successDelayMs: 0,
+      fn: () =>
+        apiPost<{ post: { id: string } }>("/api/posts", {
+          text: isLink || !trimmed ? undefined : trimmed,
+          url: isLink ? trimmed : undefined,
+          document: doc ? { name: doc.name, text: doc.text, pages: doc.pages } : undefined,
+          credits: credits.filter((c) => c.handle.trim()),
+        }),
+    });
+    if (!result.ok) {
       setBusy(null);
+      return;
     }
+    clearDraft(DRAFT_KEY);
+    router.push(`/posts/${result.value.post.id}`);
   }
 
   return (

@@ -20,6 +20,7 @@ import { postWorkspace } from "./dictionaries/postWorkspace";
 import { cardQuickActions } from "./dictionaries/cardQuickActions";
 import { videoEditor } from "./dictionaries/videoEditor";
 import { onboarding } from "./dictionaries/onboarding";
+import { actionOverlay } from "./dictionaries/actionOverlay";
 
 const dictionaries = {
   pt: {
@@ -44,6 +45,7 @@ const dictionaries = {
     cardQuickActions: cardQuickActions.pt,
     videoEditor: videoEditor.pt,
     onboarding: onboarding.pt,
+    actionOverlay: actionOverlay.pt,
   },
   en: {
     common: common.en,
@@ -67,6 +69,7 @@ const dictionaries = {
     cardQuickActions: cardQuickActions.en,
     videoEditor: videoEditor.en,
     onboarding: onboarding.en,
+    actionOverlay: actionOverlay.en,
   },
 } satisfies Record<Locale, unknown>;
 

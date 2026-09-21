@@ -4,6 +4,7 @@ import { useState } from "react";
 import { apiPost } from "@/lib/api-client";
 import { TITLE_MAX } from "./ArtEditor";
 import { useLocale } from "./LocaleProvider";
+import { useActionOverlay } from "./ActionOverlay";
 import {
   VIDEO_WIDTH,
   VIDEO_HEIGHT,
@@ -93,7 +94,7 @@ export function VideoEditor({
   );
   const [showGuides, setShowGuides] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { run } = useActionOverlay();
 
   const video = videos.find((v) => v.id === videoId) ?? videos[0];
   const cardStyles = buildVideoCardStyles(companyBrandColors);
@@ -107,20 +108,21 @@ export function VideoEditor({
   async function save() {
     if (!video) return;
     setSaving(true);
-    setError(null);
-    try {
-      await apiPost(`/api/posts/${postId}/video`, {
-        selectedVideoId: video.id,
-        title: title.slice(0, TITLE_MAX),
-        titleOffsetY: offsetY,
-        videoTemplate,
-      });
-      onSaved?.();
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setSaving(false);
-    }
+    // Loading/erro/sucesso vão pro modal (ActionOverlay) — o render do
+    // ffmpeg demora e o erro dele é longo; lá cabe inteiro e rola.
+    const result = await run({
+      title: dict.videoEditor.savingButton,
+      success: dict.videoEditor.doneMessage,
+      fn: () =>
+        apiPost(`/api/posts/${postId}/video`, {
+          selectedVideoId: video.id,
+          title: title.slice(0, TITLE_MAX),
+          titleOffsetY: offsetY,
+          videoTemplate,
+        }),
+    });
+    setSaving(false);
+    if (result.ok) onSaved?.();
   }
 
   // Tudo no preview é % do canvas 1080x1920 — assim escala com a largura da
@@ -394,8 +396,6 @@ export function VideoEditor({
         />
         <p className="hint">{dict.videoEditor.animationHint}</p>
       </div>
-
-      {error && <p className="alert-error">{error}</p>}
 
       <button onClick={save} className="btn-primary w-full" disabled={saving || !video}>
         {saving ? dict.videoEditor.savingButton : dict.videoEditor.saveButton}

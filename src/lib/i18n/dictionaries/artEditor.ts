@@ -16,6 +16,7 @@ export const artEditor = {
     formatLabel: "Formato",
     saveButton: "Salvar arte e revisar",
     savingButton: "Gerando a arte…",
+    doneMessage: "Arte gerada! Agora é só revisar.",
   },
   en: {
     helper: {
@@ -34,5 +35,6 @@ export const artEditor = {
     formatLabel: "Format",
     saveButton: "Save art and review",
     savingButton: "Generating art…",
+    doneMessage: "Art generated! Now just review it.",
   },
 };

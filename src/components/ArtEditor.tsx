@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { apiPost } from "@/lib/api-client";
 import { applyTextCase, type TextTransform } from "@/lib/text-case";
 import { useLocale } from "./LocaleProvider";
+import { useActionOverlay } from "./ActionOverlay";
 
 interface Slot {
   x: number;
@@ -97,7 +98,7 @@ export function ArtEditor({ postId, photos, templates, initial, onSaved }: Props
     hasOffset(titleOffsetRef.current) || hasOffset(subtitleOffsetRef.current),
   );
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { run } = useActionOverlay();
 
   const template = templates.find((t) => t.id === templateId);
   const photo = photos.find((p) => p.id === photoId) ?? photos[0];
@@ -390,23 +391,24 @@ export function ArtEditor({ postId, photos, templates, initial, onSaved }: Props
   async function save() {
     if (!template || !photo) return;
     setSaving(true);
-    setError(null);
-    try {
-      await apiPost(`/api/posts/${postId}/art`, {
-        selectedPhotoId: photo.id,
-        artTemplateId: template.id,
-        photoTransform: readTransform(),
-        title: title.slice(0, TITLE_MAX),
-        subtitle: subtitle.slice(0, SUBTITLE_MAX),
-        titleOffset: readTextOffset("title"),
-        subtitleOffset: readTextOffset("subtitle"),
-      });
-      onSaved?.();
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setSaving(false);
-    }
+    // Loading/erro/sucesso vão pro modal (ActionOverlay) — ele sobrevive ao
+    // unmount deste editor quando o post passa pra revisão.
+    const result = await run({
+      title: dict.artEditor.savingButton,
+      success: dict.artEditor.doneMessage,
+      fn: () =>
+        apiPost(`/api/posts/${postId}/art`, {
+          selectedPhotoId: photo.id,
+          artTemplateId: template.id,
+          photoTransform: readTransform(),
+          title: title.slice(0, TITLE_MAX),
+          subtitle: subtitle.slice(0, SUBTITLE_MAX),
+          titleOffset: readTextOffset("title"),
+          subtitleOffset: readTextOffset("subtitle"),
+        }),
+    });
+    setSaving(false);
+    if (result.ok) onSaved?.();
   }
 
   return (
@@ -504,8 +506,6 @@ export function ArtEditor({ postId, photos, templates, initial, onSaved }: Props
           </div>
         </div>
       )}
-
-      {error && <p className="alert-error">{error}</p>}
 
       <button onClick={save} className="btn-primary w-full" disabled={saving}>
         {saving ? dict.artEditor.savingButton : dict.artEditor.saveButton}

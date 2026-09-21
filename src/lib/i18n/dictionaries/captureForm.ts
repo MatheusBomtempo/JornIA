@@ -9,6 +9,9 @@ export const captureForm = {
       readingLink: "Lendo o link e gerando o texto…",
       generatingText: "Gerando o texto com IA…",
     },
+    done: {
+      textGenerated: "Texto gerado! Abrindo a pauta…",
+    },
     dragOverlay: {
       title: "Solte o PDF aqui",
       subtitle: "A foto entra no próximo passo",
@@ -58,6 +61,9 @@ export const captureForm = {
     busy: {
       readingLink: "Reading the link and generating the text…",
       generatingText: "Generating the text with AI…",
+    },
+    done: {
+      textGenerated: "Text generated! Opening the story…",
     },
     dragOverlay: {
       title: "Drop the PDF here",
