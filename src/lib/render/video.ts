@@ -101,10 +101,26 @@ export function probeVideoFile(filePath: string): Promise<VideoProbe> {
   });
 }
 
-/** scale+crop que normaliza pra 9:16 vídeos que já são altos o bastante (só corta em cima/embaixo). */
-const NORMALIZE_9x16 =
-  `scale=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:force_original_aspect_ratio=increase,` +
-  `crop=${VIDEO_WIDTH}:${VIDEO_HEIGHT}`;
+/**
+ * scale+crop que normaliza pra 9:16 vídeos que já são altos o bastante (só
+ * corta em cima/embaixo).
+ *
+ * ATENÇÃO à forma: função + array.join, igual ao blurPadGraph — NÃO uma
+ * const `template + template` interpolada dentro de outro template. O
+ * minificador do SWC no build Linux (o da Vercel) perdia o último trecho do
+ * template da esquerda ao inlinar essa const: o ffmpeg recebia
+ * "scale=1080:1920crop=1080:1920" e caía com "Option '1920crop' not found".
+ * Reproduzido com `next build` em WSL; no Windows o bundle do servidor sai
+ * sem minificar, por isso local sempre funcionou.
+ */
+function cropGraph(inputLabel?: string, outputLabel?: string): string {
+  const input = inputLabel ? `[${inputLabel}]` : "";
+  const output = outputLabel ? `[${outputLabel}]` : "";
+  return [
+    `${input}scale=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:force_original_aspect_ratio=increase`,
+    `crop=${VIDEO_WIDTH}:${VIDEO_HEIGHT}${output}`,
+  ].join(",");
+}
 
 /**
  * Núcleo do fundo desfocado: divide o stream em dois — uma cópia vira fundo
@@ -139,9 +155,7 @@ function buildNormalizeFilter(
   if (needsBlurBackground(srcWidth, srcHeight)) {
     return blurPadGraph("n", opts.inputLabel, opts.outputLabel);
   }
-  const input = opts.inputLabel ? `[${opts.inputLabel}]` : "";
-  const output = opts.outputLabel ? `[${opts.outputLabel}]` : "";
-  return `${input}${NORMALIZE_9x16}${output}`;
+  return cropGraph(opts.inputLabel, opts.outputLabel);
 }
 
 /**

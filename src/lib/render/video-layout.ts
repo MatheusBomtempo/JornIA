@@ -151,7 +151,7 @@ export function clampGroupTop(top: number, groupHeight: number): number {
  * Vídeo DEITADO de verdade (largura > altura, ex.: 16:9) — em vez de cortar
  * as laterais, o render usa uma cópia ampliada, espelhada e desfocada do
  * próprio vídeo como fundo, e mantém o original inteiro e centralizado por
- * cima (ver NORMALIZE_9x16 em render/video.ts). Nada da imagem se perde.
+ * cima (ver blurPadGraph em render/video.ts). Nada da imagem se perde.
  *
  * Importante: NÃO usar "srcAspect > VIDEO_ASPECT" aqui — como 9:16 é bem
  * mais estreito que a maioria dos formatos comuns, isso classificaria até
