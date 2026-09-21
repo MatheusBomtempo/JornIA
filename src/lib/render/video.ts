@@ -145,6 +145,19 @@ function buildNormalizeFilter(
 }
 
 /**
+ * fluent-ffmpeg descarta do err.message toda linha de stderr que começa com
+ * "[" ou espaço — justamente as linhas "[filtro @ 0x…] Option 'x' not found"
+ * que dizem o que quebrou de verdade. Devolve um erro com o comando exato e
+ * o stderr inteiro (o ring de ~100 linhas) pra isso não sumir.
+ */
+function withFfmpegContext(err: Error, command: string, stderr: string | null): Error {
+  return new Error(
+    `${err.message}\n--- binário ---\n${ffmpegInstaller.path} (${ffmpegInstaller.version})` +
+      `\n--- comando ---\n${command}\n--- stderr ---\n${(stderr ?? "").trim()}`,
+  );
+}
+
+/**
  * Frame do meio do vídeo, já normalizado em 9:16 — é o fundo do preview no
  * editor, então precisa passar pelo MESMO enquadramento do render final.
  */
@@ -159,10 +172,16 @@ export async function extractMiddleFrame(
     const vf = buildNormalizeFilter(probe.width, probe.height);
 
     await new Promise<void>((resolve, reject) => {
+      let command = "";
       ffmpeg(srcPath)
         .seekInput(middle)
         .outputOptions(["-frames:v 1", `-vf ${vf}`, "-q:v 3"])
-        .on("error", reject)
+        .on("start", (cmd: string) => {
+          command = cmd;
+        })
+        .on("error", (err: Error, _stdout: string | null, stderr: string | null) =>
+          reject(withFfmpegContext(err, command, stderr)),
+        )
         .on("end", () => resolve())
         .save(outPath);
     });
@@ -347,10 +366,14 @@ export async function renderVideoWithAnimatedTitle(
       reject(new Error(`O render do vídeo passou de ${RENDER_TIMEOUT_MS / 1000}s e foi interrompido.`));
     }, RENDER_TIMEOUT_MS);
 
+    let commandLine = "";
     command
-      .on("error", (err) => {
+      .on("start", (cmd: string) => {
+        commandLine = cmd;
+      })
+      .on("error", (err: Error, _stdout: string | null, stderr: string | null) => {
         clearTimeout(timer);
-        reject(err);
+        reject(withFfmpegContext(err, commandLine, stderr));
       })
       .on("end", () => {
         clearTimeout(timer);
