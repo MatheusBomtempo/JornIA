@@ -24,8 +24,8 @@ import {
   LOGO_GAP,
   FADE_IN_START,
   FADE_IN_END,
-  FADE_OUT_START,
-  FADE_OUT_END,
+  titleTiming,
+  type TitleTiming,
   SLIDE_DISTANCE,
   EXIT_SLIDE_DISTANCE,
   buildVideoCardStyles,
@@ -93,7 +93,11 @@ export function probeVideoFile(filePath: string): Promise<VideoProbe> {
       const stream = data.streams.find((s) => s.codec_type === "video");
       if (!stream) return reject(new Error("O arquivo enviado não tem faixa de vídeo."));
       resolve({
-        durationSec: Number(data.format.duration) || 0,
+        // Duração da FAIXA DE VÍDEO, não do container: o áudio costuma ser
+        // uns décimos mais longo e a saída do título é calculada pelo fim —
+        // tem que terminar antes do último frame de imagem. Sem duração na
+        // faixa (webm/mkv às vezes), cai na do container.
+        durationSec: Number(stream.duration) || Number(data.format.duration) || 0,
         width: stream.width ?? 0,
         height: stream.height ?? 0,
       });
@@ -316,12 +320,29 @@ function smoothstep(progress: string): string {
 /**
  * Y do overlay ao longo do tempo: desliza de baixo pra cima na entrada e um
  * pouco pra baixo na saída — sempre com easing (smoothstep) em vez de
- * progresso linear, pra ficar fluido em vez de robótico.
+ * progresso linear, pra ficar fluido em vez de robótico. Sem janela de
+ * saída (vídeo curto), só a entrada.
  */
-function yExpr(restY: number): string {
+function yExpr(restY: number, timing: TitleTiming): string {
   const enterEase = smoothstep(clamp01Progress(FADE_IN_START, FADE_IN_END));
-  const exitEase = smoothstep(clamp01Progress(FADE_OUT_START, FADE_OUT_END));
-  return `${restY}+(1-${enterEase})*${SLIDE_DISTANCE}+${exitEase}*${EXIT_SLIDE_DISTANCE}`;
+  const expr = `${restY}+(1-${enterEase})*${SLIDE_DISTANCE}`;
+  if (timing.exitStart === null || timing.exitEnd === null) return expr;
+  const exitEase = smoothstep(clamp01Progress(timing.exitStart, timing.exitEnd));
+  return `${expr}+${exitEase}*${EXIT_SLIDE_DISTANCE}`;
+}
+
+/** Filtros do cartão: entra com fade fixo no começo; sai com fade relativo ao fim do vídeo. */
+function cardFilter(timing: TitleTiming): string {
+  const fadeIn = `fade=t=in:st=${FADE_IN_START}:d=${FADE_IN_END - FADE_IN_START}:alpha=1`;
+  const fadeOut =
+    timing.exitStart !== null && timing.exitEnd !== null
+      ? `,fade=t=out:st=${timing.exitStart}:d=${round2(timing.exitEnd - timing.exitStart)}:alpha=1`
+      : "";
+  return `[1:v]format=rgba,${fadeIn}${fadeOut}[txt]`;
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
 }
 
 export async function renderVideoWithAnimatedTitle(
@@ -342,12 +363,16 @@ export async function renderVideoWithAnimatedTitle(
     card.height,
   );
 
+  // Saída do cartão calculada pelo fim do vídeo: fica na tela o tempo todo
+  // e some pouco antes de acabar (ver titleTiming).
+  const timing = titleTiming(probe.durationSec);
+
   const filterComplex = [
     buildNormalizeFilter(probe.width, probe.height, { inputLabel: "0:v", outputLabel: "main" }),
-    `[1:v]format=rgba,fade=t=in:st=${FADE_IN_START}:d=${FADE_IN_END - FADE_IN_START}:alpha=1,fade=t=out:st=${FADE_OUT_START}:d=${FADE_OUT_END - FADE_OUT_START}:alpha=1[txt]`,
+    cardFilter(timing),
     // eof_action=pass: quando o cartão acaba (fim da animação), o vídeo segue
     // sem overlay até o próprio fim — e o encode termina junto com ele.
-    `[main][txt]overlay=x=0:y='${yExpr(restY)}':eval=frame:format=auto:eof_action=pass[outv]`,
+    `[main][txt]overlay=x=0:y='${yExpr(restY, timing)}':eval=frame:format=auto:eof_action=pass[outv]`,
   ].join(";");
 
   await new Promise<void>((resolve, reject) => {
@@ -359,7 +384,7 @@ export async function renderVideoWithAnimatedTitle(
       // encode nunca acaba quando o vídeo de origem não tem faixa de áudio
       // (`-shortest` só se ancora em stream não-filtrado, então não corta nada
       // e o ffmpeg fica duplicando o último frame pra sempre).
-      .inputOptions(["-loop", "1", "-t", String(FADE_OUT_END)])
+      .inputOptions(["-loop", "1", "-t", String(timing.cardEnd)])
       .complexFilter(filterComplex)
       .outputOptions([
         "-map [outv]",

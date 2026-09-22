@@ -121,16 +121,59 @@ export const DEFAULT_VIDEO_TEMPLATE: VideoCardStyle["id"] = "classic";
 // Entrada e saída usam easing (smoothstep) em vez de progresso linear — ver
 // `smoothstep`/`clamp01Progress` em render/video.ts — e a saída também
 // desliza (não só desaparece), pra ficar simétrica com a entrada e parecer
-// mais fluida.
+// mais fluida. A entrada é fixa no começo; a saída é relativa ao FIM do
+// vídeo (ver `titleTiming`) — o título fica na tela o vídeo inteiro e só
+// some pouco antes de acabar, em vez de piscar por 4 s num Reels de 15.
 export const FADE_IN_START = 0.28;
 export const FADE_IN_END = 1.05;
-/** Fim da leitura parada = início do fade/slide de saída. */
-export const FADE_OUT_START = 3.6;
-export const FADE_OUT_END = 4.35;
+/** Duração do fade/slide de saída. */
+export const EXIT_DURATION = 0.75;
+/** Folga entre o fim da saída e o fim do vídeo — a saída precisa terminar antes do último frame. */
+export const EXIT_END_MARGIN = 0.35;
+/** Mínimo de leitura parada entre o fim da entrada e o começo da saída. */
+export const MIN_HOLD = 0.8;
+/** Janela fixa (comportamento antigo) pra quando o ffprobe não informa a duração. */
+export const FALLBACK_CARD_END = 4.35;
 /** Px que o bloco sobe durante a entrada. */
 export const SLIDE_DISTANCE = 46;
 /** Px que o bloco desce durante a saída (mais sutil que a entrada). */
 export const EXIT_SLIDE_DISTANCE = 22;
+
+export interface TitleTiming {
+  /** Início e fim do fade/slide de saída; null = fica até o fim, sem saída. */
+  exitStart: number | null;
+  exitEnd: number | null;
+  /** Até quando o stream do cartão existe (o `-t` do PNG em loop). */
+  cardEnd: number;
+}
+
+/**
+ * Temporização do cartão a partir da duração do vídeo. O `fade` do ffmpeg
+ * só aceita instantes absolutos, então a saída é calculada aqui: termina
+ * `EXIT_END_MARGIN` antes do fim e dura `EXIT_DURATION`. Vídeo curto demais
+ * pra entrada + leitura + saída fica com o cartão até o fim, sem saída.
+ * Sem duração conhecida, cai na janela fixa antiga — melhor que arriscar
+ * um stream de cartão infinito (encode que nunca termina).
+ */
+export function titleTiming(durationSec: number): TitleTiming {
+  if (!(durationSec > 0)) {
+    return {
+      exitStart: FALLBACK_CARD_END - EXIT_DURATION,
+      exitEnd: FALLBACK_CARD_END,
+      cardEnd: FALLBACK_CARD_END,
+    };
+  }
+  const exitEnd = round2(durationSec - EXIT_END_MARGIN);
+  const exitStart = round2(exitEnd - EXIT_DURATION);
+  if (exitStart < FADE_IN_END + MIN_HOLD) {
+    return { exitStart: null, exitEnd: null, cardEnd: round2(durationSec) };
+  }
+  return { exitStart, exitEnd, cardEnd: exitEnd };
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
 
 /** Y padrão do topo do bloco (texto + logo): encostado no fim da área segura. */
 export function defaultGroupTop(groupHeight: number): number {

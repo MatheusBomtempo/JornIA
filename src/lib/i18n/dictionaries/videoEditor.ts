@@ -2,7 +2,7 @@ export const videoEditor = {
   pt: {
     titleFieldLabel: "Texto que entra animado no vídeo",
     titleFieldPlaceholder: "Manchete curta e direta",
-    animationHint: "Aparece com uma animação de entrada logo no início do vídeo e some pouco depois.",
+    animationHint: "Entra com uma animação logo no início e fica na tela o vídeo inteiro — só sai, suavemente, pouco antes de acabar.",
     saveButton: "Salvar vídeo e revisar",
     savingButton: "Gerando o vídeo…",
     doneMessage: "Vídeo gerado! Agora é só revisar.",
@@ -27,7 +27,7 @@ export const videoEditor = {
   en: {
     titleFieldLabel: "Text that animates into the video",
     titleFieldPlaceholder: "Short, direct headline",
-    animationHint: "Appears with an entrance animation near the start of the video and fades out shortly after.",
+    animationHint: "Animates in near the start and stays on screen for the whole video — it only fades out, gently, just before the end.",
     saveButton: "Save video and review",
     savingButton: "Rendering the video…",
     doneMessage: "Video rendered! Now just review it.",
