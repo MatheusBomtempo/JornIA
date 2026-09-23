@@ -102,8 +102,9 @@ export const saveVideoSchema = z.object({
   /** Ajuste vertical do bloco no editor (px em escala 1080x1920). O render
    *  trava o resultado dentro da área segura do Reels de qualquer jeito. */
   titleOffsetY: z.number().default(0),
-  /** Estilo fixo do cartão de título — ver VIDEO_CARD_STYLES. */
-  videoTemplate: z.enum(["classic", "light", "bold"]).default("classic"),
+  /** Estilo fixo do cartão de título — ver VIDEO_CARD_STYLES. Padrão "bold"
+   *  (3º), igual ao default do banco e do DEFAULT_VIDEO_TEMPLATE. */
+  videoTemplate: z.enum(["classic", "light", "bold"]).default("bold"),
 });
 
 export const editVersionSchema = z

@@ -115,7 +115,9 @@ export function buildVideoCardStyles(
   };
 }
 
-export const DEFAULT_VIDEO_TEMPLATE: VideoCardStyle["id"] = "classic";
+// "bold" é o 3º template (ver VIDEO_TEMPLATE_ORDER em VideoEditor) — fica
+// pré-selecionado tanto na UI quanto no fallback do render server-side.
+export const DEFAULT_VIDEO_TEMPLATE: VideoCardStyle["id"] = "bold";
 
 // ── Animação (segundos) ────────────────────────────────────────
 // Entrada e saída usam easing (smoothstep) em vez de progresso linear — ver

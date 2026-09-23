@@ -252,9 +252,11 @@ model PostVersion {
   /**
    * Template fixo do cartão de título do vídeo ('classic' | 'light' | 'bold').
    * Diferente do ArtTemplate (foto): são só 3 estilos prontos no código, sem
-   * builder — por isso é string livre em vez de relation.
+   * builder — por isso é string livre em vez de relation. Padrão "bold" (o
+   * 3º, ver DEFAULT_VIDEO_TEMPLATE em render/video-layout.ts) — mantém os 3
+   * defaults (banco, validação e UI) alinhados.
    */
-  videoTemplate    String   @default("classic") @map("video_template")
+  videoTemplate    String   @default("bold") @map("video_template")
   /**
    * Vídeo final já renderizado (texto com animação de entrada/saída
    * gravado nos frames) — é ESTE que vai pro Instagram, nunca o original.

@@ -376,7 +376,16 @@ function ActionOverlayDialog({
             <span>{t.uploadWarning}</span>
           </p>
         ) : loading ? (
-          <p className="mt-4 text-center text-xs text-faint">{t.dontClose}</p>
+          // Sem barra de progresso é a fase de processamento no servidor
+          // (ex.: render de vídeo com ffmpeg) — pode demorar bem mais que o
+          // upload, então o aviso precisa ser tão visível quanto o de cima.
+          <p
+            role="alert"
+            className="mt-4 flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs leading-relaxed text-amber-200"
+          >
+            <span aria-hidden className="shrink-0">⚠️</span>
+            <span>{t.dontClose}</span>
+          </p>
         ) : null}
         {state.status === "success" && (
           <button ref={primaryRef} type="button" className="btn-primary mt-4 w-full" onClick={onClose}>
