@@ -8,6 +8,31 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
+    # `npm run build` roda `prisma migrate deploy` antes do `next build` (é o
+    # mesmo script que a Vercel usa) — então precisa de um Postgres de verdade
+    # e do DIRECT_URL que o schema exige. De quebra, o CI valida que a cadeia
+    # inteira de migrations aplica limpa num banco zerado.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: jornai
+          POSTGRES_PASSWORD: jornai
+          POSTGRES_DB: jornai
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U jornai"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      AUTH_SECRET: ci-secret
+      DATABASE_URL: postgresql://jornai:jornai@localhost:5432/jornai?schema=public
+      DIRECT_URL: postgresql://jornai:jornai@localhost:5432/jornai?schema=public
+
     steps:
       - uses: actions/checkout@v4
 
@@ -30,6 +55,3 @@ jobs:
 
       - name: Build
         run: npm run build
-        env:
-          AUTH_SECRET: ci-secret
-          DATABASE_URL: postgresql://user:pass@localhost:5432/db
