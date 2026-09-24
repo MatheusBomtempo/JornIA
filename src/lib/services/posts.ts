@@ -7,7 +7,7 @@ import { renderAndStore } from "../render";
 import { renderVideoAndStore, extractAndStoreMiddleFrame } from "../render/video";
 import { publishToInstagram, publishVideoToInstagram } from "../instagram";
 import { canEditPost, canReviewPost, can } from "../rbac";
-import { purgePostsWithMedia } from "./retention";
+import { PURGE_SELECT, purgePostsWithMedia } from "./retention";
 import { getAppSettings } from "./settings";
 import { ApiError, badRequest, conflict, forbidden, notFound } from "../http";
 import { POST_STATUS, PUBLICATION_STATUS, PEER_APPROVALS_NEEDED, type Credit } from "../domain";
@@ -808,14 +808,7 @@ export function listPosts(companyId: string, opts: { status?: string; mineFor?: 
 export async function deletePostNow(user: CompanyUser, id: string): Promise<void> {
   const post = await prisma.post.findUnique({
     where: { id },
-    select: {
-      id: true,
-      companyId: true,
-      createdBy: true,
-      photos: { select: { storageUrl: true } },
-      videos: { select: { storageUrl: true } },
-      versions: { select: { renderedArtUrl: true, renderedVideoUrl: true } },
-    },
+    select: { ...PURGE_SELECT, companyId: true, createdBy: true },
   });
   if (!post) throw notFound("Post não encontrado.");
   assertSameCompany(post.companyId, user.companyId);

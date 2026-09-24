@@ -188,6 +188,17 @@ export const updateSettingsSchema = z.object({
   reviewRequired: z.boolean(),
 });
 
+/** Palavra que o admin precisa digitar pra liberar o reset — conferida também no servidor. */
+export const RESET_CONFIRM_WORD = "APAGAR";
+
+/** POST /admin/reset-data — Admin → Configurações → Zona de perigo. */
+export const resetDataSchema = z.object({
+  scope: z.enum(["unpublished", "all"]),
+  confirm: z.literal(RESET_CONFIRM_WORD, {
+    errorMap: () => ({ message: `Digite ${RESET_CONFIRM_WORD} pra confirmar.` }),
+  }),
+});
+
 // ── API keys ─────────────────────────────────────────────────
 export const createApiKeySchema = z.object({
   name: z.string().min(1),

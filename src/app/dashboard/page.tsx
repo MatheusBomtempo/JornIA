@@ -28,12 +28,6 @@ export default async function DashboardPage() {
 
   return (
     <AppShell user={{ name: user.name, role: user.role, mustSetPassword: user.passwordResetAt !== null }}>
-      <div className="alert-info mb-5">
-        🎬 {dict.dashboard.videoBannerPrefix}
-        <strong>{dict.dashboard.videoBannerBold}</strong>
-        {dict.dashboard.videoBannerSuffix}
-      </div>
-
       <div className="mb-5 flex items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold tracking-tight">{dict.dashboard.title}</h1>

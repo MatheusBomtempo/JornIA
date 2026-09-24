@@ -132,6 +132,22 @@ export const adminPanel = {
       reviewToggleOffDesc:
         "Desligado: assim que a arte é salva, o post publica direto no Instagram — sem passar por revisão nem aprovação de ninguém.",
       savingLabel: "Salvando…",
+      dangerTitle: "Zona de perigo",
+      dangerHint:
+        "Apaga de verdade — do banco e dos arquivos no armazenamento. Não dá pra desfazer. Só afeta a sua empresa; nada que já está no Instagram é tocado.",
+      resetUnpublishedTitle: "Apagar pautas que ainda não foram publicadas",
+      resetUnpublishedDesc:
+        "Remove do feed tudo que não subiu pro Instagram (em edição, em revisão, recusadas e com falha), junto com as fotos, vídeos e artes delas. Posts publicados ficam.",
+      resetAllTitle: "Apagar tudo",
+      resetAllDesc:
+        "Remove todas as pautas (inclusive as publicadas), os arquivos delas e o histórico de publicações removidas. Ficam só os usuários e a configuração: empresa, templates, exemplos de estilo, API keys e esta tela.",
+      deleteButton: "Apagar…",
+      confirmPrompt: "Digite {word} pra confirmar:",
+      confirmButton: "Apagar de vez",
+      running: "Apagando…",
+      doneTitle: "Limpeza concluída.",
+      resultPosts: "{n} pauta(s) apagada(s)",
+      resultLogs: "{n} registro(s) de histórico apagado(s)",
     },
   },
   en: {
@@ -267,6 +283,22 @@ export const adminPanel = {
       reviewToggleOffDesc:
         "Off: as soon as the art is saved, the post publishes straight to Instagram — no review, no approval from anyone.",
       savingLabel: "Saving…",
+      dangerTitle: "Danger zone",
+      dangerHint:
+        "Permanently deletes — from the database and from file storage. It can't be undone. Only affects your company; nothing already on Instagram is touched.",
+      resetUnpublishedTitle: "Delete stories that haven't been published",
+      resetUnpublishedDesc:
+        "Removes everything from the feed that hasn't gone to Instagram (editing, in review, rejected and failed), along with their photos, videos and art. Published posts stay.",
+      resetAllTitle: "Delete everything",
+      resetAllDesc:
+        "Removes every story (including published ones), their files and the history of removed publications. Only users and configuration remain: company, templates, style examples, API keys and this screen.",
+      deleteButton: "Delete…",
+      confirmPrompt: "Type {word} to confirm:",
+      confirmButton: "Delete permanently",
+      running: "Deleting…",
+      doneTitle: "Cleanup finished.",
+      resultPosts: "{n} story(ies) deleted",
+      resultLogs: "{n} history record(s) deleted",
     },
   },
 };

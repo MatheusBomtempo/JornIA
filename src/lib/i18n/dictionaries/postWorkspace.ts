@@ -2,7 +2,7 @@ export const postWorkspace = {
   pt: {
     steps: {
       text: "Texto",
-      image: "Imagem",
+      image: "Mídia",
       review: "Revisão",
     },
     back: "← Voltar",
@@ -117,7 +117,7 @@ export const postWorkspace = {
       waitingWithCountSuffix: "jornalistas já aprovaram.",
       waitingNoCountPrefix: "Aguardando aprovação de",
       waitingNoCountSuffix: "outros jornalistas, ou de um editor/gerente.",
-      artNotReady: "A arte ainda não foi gerada — finalize o passo 2 (Imagem) antes.",
+      artNotReady: "A arte ainda não foi gerada — finalize o passo 2 (Mídia) antes.",
       rewriteTitle: "Pedir reescrita",
       rewriteDesc: "A IA gera uma nova versão do texto",
       rejectTitle: "Recusar",
@@ -159,7 +159,7 @@ export const postWorkspace = {
   en: {
     steps: {
       text: "Text",
-      image: "Image",
+      image: "Media",
       review: "Review",
     },
     back: "← Back",
@@ -274,7 +274,7 @@ export const postWorkspace = {
       waitingWithCountSuffix: "journalists have already approved.",
       waitingNoCountPrefix: "Awaiting approval from",
       waitingNoCountSuffix: "other journalists, or from an editor/manager.",
-      artNotReady: "The art hasn't been generated yet — finish step 2 (Image) first.",
+      artNotReady: "The art hasn't been generated yet — finish step 2 (Media) first.",
       rewriteTitle: "Request rewrite",
       rewriteDesc: "The AI generates a new version of the text",
       rejectTitle: "Reject",

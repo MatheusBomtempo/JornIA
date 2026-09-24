@@ -6,7 +6,9 @@ import { USER_ROLES, type UserRole } from "@/lib/domain";
 import { TemplateBuilder } from "./TemplateBuilder";
 import { Tooltip } from "./Tooltip";
 import { useLocale } from "./LocaleProvider";
+import { useActionOverlay } from "./ActionOverlay";
 import { FALLBACK_BRAND_DARK, FALLBACK_BRAND_LIGHT } from "@/lib/render/video-layout";
+import { RESET_CONFIRM_WORD } from "@/lib/validation";
 
 type Tab = "style" | "templates" | "users" | "keys" | "settings" | "company" | "balance";
 
@@ -831,6 +833,116 @@ function SettingsSection() {
       </div>
       {saving && <p className="hint">{t.savingLabel}</p>}
       {error && <p className="alert-error">{error}</p>}
+
+      <DangerZone />
+    </div>
+  );
+}
+
+// ── Zona de perigo: limpar dados de teste ────────────────────
+type ResetScope = "unpublished" | "all";
+
+/**
+ * Dois resets da empresa (ver services/data-reset.ts). Cada um só libera o
+ * botão final depois de digitar a palavra de confirmação — o servidor
+ * confere a mesma palavra, então nem uma chamada acidental à API apaga nada.
+ */
+function DangerZone() {
+  const { dict } = useLocale();
+  const t = dict.adminPanel.settingsSection;
+  const { run } = useActionOverlay();
+  const [open, setOpen] = useState<ResetScope | null>(null);
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState<string | null>(null);
+
+  const actions: { scope: ResetScope; title: string; desc: string }[] = [
+    { scope: "unpublished", title: t.resetUnpublishedTitle, desc: t.resetUnpublishedDesc },
+    { scope: "all", title: t.resetAllTitle, desc: t.resetAllDesc },
+  ];
+
+  function toggle(scope: ResetScope) {
+    setOpen((cur) => (cur === scope ? null : scope));
+    setTyped("");
+    setDone(null);
+  }
+
+  async function confirm(scope: ResetScope) {
+    setBusy(true);
+    const result = await run({
+      title: t.running,
+      success: t.doneTitle,
+      slowAfterSeconds: 60,
+      fn: () =>
+        apiPost<{ posts: number; logs: number }>("/api/admin/reset-data", {
+          scope,
+          confirm: typed,
+        }),
+    });
+    setBusy(false);
+    if (!result.ok) return;
+    const parts = [t.resultPosts.replace("{n}", String(result.value.posts))];
+    if (scope === "all") parts.push(t.resultLogs.replace("{n}", String(result.value.logs)));
+    setDone(`${t.doneTitle} ${parts.join(" · ")}.`);
+    setOpen(null);
+    setTyped("");
+  }
+
+  return (
+    <div className="card mt-6 space-y-3 border-red-500/30 p-4">
+      <div>
+        <h3 className="text-sm font-semibold text-red-300">⚠️ {t.dangerTitle}</h3>
+        <p className="hint mb-0 mt-1">{t.dangerHint}</p>
+      </div>
+
+      {actions.map((a) => (
+        <div key={a.scope} className="card-soft space-y-3 p-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-ink">{a.title}</p>
+              <p className="hint mb-0 mt-0.5">{a.desc}</p>
+            </div>
+            <button
+              type="button"
+              className="btn-danger btn-sm shrink-0"
+              onClick={() => toggle(a.scope)}
+              disabled={busy}
+              aria-expanded={open === a.scope}
+            >
+              {open === a.scope ? dict.common.cancel : t.deleteButton}
+            </button>
+          </div>
+
+          {open === a.scope && (
+            <div className="space-y-2 border-t border-lineSoft pt-3">
+              <label className="label" htmlFor={`reset-confirm-${a.scope}`}>
+                {t.confirmPrompt.replace("{word}", RESET_CONFIRM_WORD)}
+              </label>
+              <div className="flex flex-wrap gap-2">
+                <input
+                  id={`reset-confirm-${a.scope}`}
+                  className="input max-w-[12rem] font-mono"
+                  value={typed}
+                  onChange={(e) => setTyped(e.target.value)}
+                  placeholder={RESET_CONFIRM_WORD}
+                  autoComplete="off"
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  className="btn bg-red-600 text-white hover:bg-red-500 active:bg-red-700"
+                  onClick={() => confirm(a.scope)}
+                  disabled={busy || typed !== RESET_CONFIRM_WORD}
+                >
+                  {t.confirmButton}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
+
+      {done && <p className="alert-success">✅ {done}</p>}
     </div>
   );
 }

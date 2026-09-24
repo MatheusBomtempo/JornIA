@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiPost } from "@/lib/api-client";
-import { applyTextCase, type TextTransform } from "@/lib/text-case";
+import { type TextTransform } from "@/lib/text-case";
+import { textSlotSchema, type TextSlot } from "@/lib/render/slots";
+import { layoutText, type Font, type Weight } from "@/lib/render/text-svg";
 import { useLocale } from "./LocaleProvider";
 import { useActionOverlay } from "./ActionOverlay";
 
@@ -50,6 +52,112 @@ type TextKind = "title" | "subtitle";
  */
 function canvasUrl(url: string): string {
   return `${url}${url.includes("?") ? "&" : "?"}cors=1`;
+}
+
+// ── Texto idêntico à arte final ──────────────────────────────
+// O título/subtítulo do editor usa o MESMO layout vetorial do render do
+// servidor (layoutText, em render/text-svg.ts) com o MESMO arquivo da
+// Poppins (servido por /api/fonts/poppins/[peso]). Antes era um Textbox do
+// Fabric: métricas próprias e sem encolher a fonte — título longo quebrava
+// em 3 linhas e encostava no subtítulo, enquanto a arte da revisão (que
+// encolhe pra caber no slot) saía normal.
+
+const fontPromises = new Map<Weight, Promise<Font | null>>();
+const loadedFonts = new Map<Weight, Font>();
+
+function loadEditorFont(weight: Weight): Promise<Font | null> {
+  let p = fontPromises.get(weight);
+  if (!p) {
+    p = (async () => {
+      try {
+        const [mod, res] = await Promise.all([
+          import("opentype.js"),
+          fetch(`/api/fonts/poppins/${weight}`),
+        ]);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        // opentype.js é CommonJS: o bundler pode entregar em `default` ou não.
+        const parse = (mod.default ?? mod).parse as (buf: ArrayBuffer) => Font;
+        const font = parse(await res.arrayBuffer());
+        loadedFonts.set(weight, font);
+        return font;
+      } catch (err) {
+        console.warn(`[JornAI] Fonte Poppins ${weight} não carregou no editor:`, err);
+        fontPromises.delete(weight); // tenta de novo na próxima montagem
+        return null;
+      }
+    })();
+    fontPromises.set(weight, p);
+  }
+  return p;
+}
+
+/**
+ * Caixa arrastável do tamanho EXATO do slot (mesma geometria que o render
+ * usa pra posicionar e travar o texto — ver offsetSlot), que desenha por
+ * dentro os glifos calculados pelo layoutText.
+ */
+function makeTextHandle(
+  fabric: typeof import("fabric"),
+  slot: TextSlot,
+  dispScale: number,
+  offset: Offset,
+  borderColor: string,
+) {
+  const handle: any = new fabric.Rect({
+    left: (slot.x + offset.offsetX) * dispScale,
+    top: (slot.y + offset.offsetY) * dispScale,
+    width: slot.width * dispScale,
+    height: slot.height * dispScale,
+    fill: "rgba(0,0,0,0)",
+    stroke: null,
+    strokeWidth: 0,
+    selectable: true,
+    evented: true,
+    hasControls: false,
+    hasBorders: true,
+    lockScalingX: true,
+    lockScalingY: true,
+    lockRotation: true,
+    borderColor,
+    // Sem cache: o cache do Fabric recorta no tamanho da caixa, e a descida
+    // de letras da última linha (g, p, ç) pode passar um pouco do slot —
+    // igual acontece na arte final.
+    objectCaching: false,
+  });
+  handle.jornaiText = { glyphs: [] as { path: Path2D; x: number; y: number }[], slot, dispScale, fallback: "" };
+  handle._render = (ctx: CanvasRenderingContext2D) => {
+    const t = handle.jornaiText;
+    ctx.save();
+    ctx.translate(-handle.width / 2, -handle.height / 2);
+    ctx.scale(t.dispScale, t.dispScale);
+    ctx.fillStyle = t.slot.color;
+    if (t.glyphs.length) {
+      for (const g of t.glyphs) {
+        ctx.save();
+        ctx.translate(g.x, g.y);
+        ctx.fill(g.path);
+        ctx.restore();
+      }
+    } else if (t.fallback) {
+      // Só se a fonte não carregou: mostra o texto aproximado em vez de nada.
+      ctx.font = `${t.slot.weight} ${t.slot.fontSize}px Poppins`;
+      ctx.textBaseline = "top";
+      ctx.fillText(t.fallback, 0, 0, t.slot.width);
+    }
+    ctx.restore();
+  };
+  return handle;
+}
+
+/** (Re)calcula os glifos do texto — layout relativo ao canto do slot. */
+function setHandleText(handle: any, text: string) {
+  if (!handle) return;
+  const t = handle.jornaiText;
+  const font = loadedFonts.get(t.slot.weight as Weight);
+  const layout = font ? layoutText(font, text, { ...t.slot, x: 0, y: 0 }) : null;
+  t.glyphs = (layout?.glyphs ?? []).map((g) => ({ path: new Path2D(g.d), x: g.x, y: g.y }));
+  t.fallback = font ? "" : text;
+  handle.dirty = true;
 }
 
 interface Props {
@@ -199,7 +307,14 @@ export function ArtEditor({ postId, photos, templates, initial, onSaved }: Props
     let dead = false;
 
     (async () => {
-      const fabric = await import("fabric");
+      // Slots com os mesmos padrões do render do servidor (peso, entrelinha…).
+      const titleSlot = textSlotSchema.parse(template.titleSlot);
+      const subtitleSlot = template.subtitleSlot ? textSlotSchema.parse(template.subtitleSlot) : null;
+      const [fabric] = await Promise.all([
+        import("fabric"),
+        loadEditorFont(titleSlot.weight as Weight),
+        subtitleSlot ? loadEditorFont(subtitleSlot.weight as Weight) : null,
+      ]);
       if (dead) return;
 
       const dispScale = displayW / template.canvasWidth;
@@ -279,39 +394,16 @@ export function ArtEditor({ postId, photos, templates, initial, onSaved }: Props
 
       // Texto arrastável — só MOVE (sem redimensionar/rotacionar, pra manter
       // fonte e largura do template). O deslocamento é salvo por post; o
-      // template em si nunca muda.
-      const mkText = (slotDef: Slot, value: string, offset: Offset, color: string) => {
-        const box = new fabric.Textbox(applyTextCase(value, slotDef.transform), {
-          left: slotDef.x * dispScale + offset.offsetX * dispScale,
-          top: slotDef.y * dispScale + offset.offsetY * dispScale,
-          width: slotDef.width * dispScale,
-          fontSize: (slotDef.fontSize ?? 38.2) * dispScale,
-          fill: slotDef.color ?? "#ffffff",
-          textAlign: slotDef.align ?? "left",
-          fontFamily: "Poppins",
-          fontWeight: slotDef.weight ?? 600,
-          lineHeight: slotDef.lineHeight ?? 1.25,
-          selectable: true,
-          evented: true,
-          hasControls: false,
-          hasBorders: true,
-          lockScalingX: true,
-          lockScalingY: true,
-          lockRotation: true,
-          borderColor: color,
-          editable: false,
-        });
-        return box;
-      };
-
-      const titleBox = mkText(template.titleSlot, title, titleOffsetRef.current, "#f59e0b");
+      // template em si nunca muda. Desenhado com o layout da arte final —
+      // ver makeTextHandle.
+      const titleBox = makeTextHandle(fabric, titleSlot, dispScale, titleOffsetRef.current, "#f59e0b");
+      setHandleText(titleBox, title);
       canvas.add(titleBox);
 
       let subtitleBox = null;
-      if (template.subtitleSlot) {
-        subtitleBox = mkText(
-          template.subtitleSlot, subtitle, subtitleOffsetRef.current, "#10b981",
-        );
+      if (subtitleSlot) {
+        subtitleBox = makeTextHandle(fabric, subtitleSlot, dispScale, subtitleOffsetRef.current, "#10b981");
+        setHandleText(subtitleBox, subtitle);
         canvas.add(subtitleBox);
       }
 
@@ -354,24 +446,23 @@ export function ArtEditor({ postId, photos, templates, initial, onSaved }: Props
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [photoId, templateId, displayW]);
 
-  // Texto em tempo real no preview
+  // Texto em tempo real no preview (mesmo layout da arte final, inclusive o
+  // encolher/"…" quando não cabe no slot).
   useEffect(() => {
     const r = fx.current;
     if (r?.titleBox) {
-      r.titleBox.set({ text: applyTextCase(title, template?.titleSlot.transform) });
+      setHandleText(r.titleBox, title);
       r.canvas.renderAll();
     }
-  }, [title, template]);
+  }, [title]);
 
   useEffect(() => {
     const r = fx.current;
     if (r?.subtitleBox) {
-      r.subtitleBox.set({
-        text: applyTextCase(subtitle, template?.subtitleSlot?.transform),
-      });
+      setHandleText(r.subtitleBox, subtitle);
       r.canvas.renderAll();
     }
-  }, [subtitle, template]);
+  }, [subtitle]);
 
   function applyZoom(next: number) {
     const r = fx.current;

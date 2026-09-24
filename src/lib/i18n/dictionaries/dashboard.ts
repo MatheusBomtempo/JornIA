@@ -1,8 +1,5 @@
 export const dashboard = {
   pt: {
-    videoBannerPrefix: "Em breve: suporte a ",
-    videoBannerBold: "vídeos",
-    videoBannerSuffix: ", além de foto — mesma proposta, novo formato de post.",
     title: "Feed de pautas",
     postCountOne: "post no fluxo",
     postCountOther: "posts no fluxo",
@@ -18,9 +15,6 @@ export const dashboard = {
     purgedAt: "apagado",
   },
   en: {
-    videoBannerPrefix: "Coming soon: support for ",
-    videoBannerBold: "videos",
-    videoBannerSuffix: ", alongside photos — same idea, new post format.",
     title: "Story feed",
     postCountOne: "post in the pipeline",
     postCountOther: "posts in the pipeline",

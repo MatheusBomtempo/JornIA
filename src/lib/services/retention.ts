@@ -5,10 +5,23 @@ import { deleteObjectByUrl } from "../storage";
 const PUBLISHED_TTL_DAYS = 2;
 const PENDING_TTL_DAYS = 3; // in_review | failed
 
+/**
+ * O que buscar de cada post antes de apagá-lo — todo arquivo que ele tem no
+ * storage. Único lugar que define isso (retenção, apagar manual e o reset do
+ * admin usam esta constante), pra ninguém esquecer um tipo de arquivo: o
+ * frame de prévia do vídeo ficava órfão no R2 antes de estar aqui.
+ */
+export const PURGE_SELECT = {
+  id: true,
+  photos: { select: { storageUrl: true } },
+  videos: { select: { storageUrl: true, previewFrameUrl: true } },
+  versions: { select: { renderedArtUrl: true, renderedVideoUrl: true } },
+} as const;
+
 type PurgeCandidate = {
   id: string;
   photos: { storageUrl: string }[];
-  videos: { storageUrl: string }[];
+  videos: { storageUrl: string; previewFrameUrl: string | null }[];
   versions: { renderedArtUrl: string | null; renderedVideoUrl: string | null }[];
 };
 
@@ -26,7 +39,10 @@ export async function purgePostsWithMedia(posts: PurgeCandidate[]): Promise<void
   const urls = new Set<string>();
   for (const post of posts) {
     for (const photo of post.photos) urls.add(photo.storageUrl);
-    for (const video of post.videos) urls.add(video.storageUrl);
+    for (const video of post.videos) {
+      urls.add(video.storageUrl);
+      if (video.previewFrameUrl) urls.add(video.previewFrameUrl);
+    }
     for (const version of post.versions) {
       if (version.renderedArtUrl) urls.add(version.renderedArtUrl);
       if (version.renderedVideoUrl) urls.add(version.renderedVideoUrl);
@@ -71,12 +87,7 @@ export async function cleanupExpiredPosts(): Promise<{ purged: number }> {
         { status: { in: ["in_review", "failed"] }, updatedAt: { lt: pendingCutoff } },
       ],
     },
-    select: {
-      id: true,
-      photos: { select: { storageUrl: true } },
-      videos: { select: { storageUrl: true } },
-      versions: { select: { renderedArtUrl: true, renderedVideoUrl: true } },
-    },
+    select: PURGE_SELECT,
   });
   if (expired.length === 0) return { purged: 0 };
 
