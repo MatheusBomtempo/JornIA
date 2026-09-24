@@ -6,6 +6,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { execFile } from "node:child_process";
 import sharp from "sharp";
 import { putObject } from "../storage";
 import { renderTextToSvg } from "./text";
@@ -57,6 +58,15 @@ ffmpeg.setFfprobePath(ffprobeInstaller.path);
 /** Teto do encode — abaixo do maxDuration da rota (ver /api/posts/[id]/video). */
 const RENDER_TIMEOUT_MS = 240_000;
 
+/**
+ * Taxa de quadros FIXA da saída. Sem isso a saída herdava a taxa declarada
+ * na origem: WebM gravado pelo navegador declara 1000 fps (timebase de 1 ms)
+ * e saía um MP4 de 1000 fps — 6.004 frames pra 6 s, render 4x mais lento e
+ * rejeitado pelo Instagram (Reels aceita até 60). Câmera lenta (240 fps) e
+ * gravação de tela têm o mesmo problema. 30 é o recomendado pro Reels.
+ */
+const OUTPUT_FPS = 30;
+
 export interface RenderVideoParams {
   videoUrl: string;
   title: string;
@@ -85,23 +95,63 @@ async function downloadToTemp(url: string, suffix: string): Promise<string> {
   return dest;
 }
 
-/** Duração e dimensões do vídeo — base do frame do meio e da validação de proporção. */
-export function probeVideoFile(filePath: string): Promise<VideoProbe> {
-  return new Promise((resolve, reject) => {
-    ffmpeg.ffprobe(filePath, (err, data) => {
-      if (err) return reject(err);
-      const stream = data.streams.find((s) => s.codec_type === "video");
-      if (!stream) return reject(new Error("O arquivo enviado não tem faixa de vídeo."));
-      resolve({
-        // Duração da FAIXA DE VÍDEO, não do container: o áudio costuma ser
-        // uns décimos mais longo e a saída do título é calculada pelo fim —
-        // tem que terminar antes do último frame de imagem. Sem duração na
-        // faixa (webm/mkv às vezes), cai na do container.
-        durationSec: Number(stream.duration) || Number(data.format.duration) || 0,
-        width: stream.width ?? 0,
-        height: stream.height ?? 0,
-      });
-    });
+/**
+ * Duração, dimensões e rotação do vídeo — base do frame do meio e da
+ * validação de proporção.
+ *
+ * Dimensões já na orientação EXIBIDA: celular filmando em pé costuma gravar
+ * o arquivo "deitado" (1920x1080) com uma matriz de rotação de 90° — o
+ * ffmpeg gira os frames sozinho ao decodificar, mas a largura/altura do
+ * stream continuam as do arquivo. Sem trocar aqui, vídeo em pé era tratado
+ * como deitado: aviso errado no editor e render ~2,5x mais lento, montando
+ * à toa o fundo desfocado (medido em produção).
+ */
+export async function probeVideoFile(filePath: string): Promise<VideoProbe> {
+  const data = await new Promise<ffmpeg.FfprobeData>((resolve, reject) =>
+    ffmpeg.ffprobe(filePath, (err, d) => (err ? reject(err) : resolve(d))),
+  );
+  const stream = data.streams.find((s) => s.codec_type === "video");
+  if (!stream) throw new Error("O arquivo enviado não tem faixa de vídeo.");
+
+  // fluent-ffmpeg expõe a matriz de rotação em `rotation`; ffprobe antigo
+  // (o do build Linux da Vercel) usa a tag `rotate`. Vale ±90 e ±270.
+  const s = stream as typeof stream & { rotation?: string | number; tags?: { rotate?: string } };
+  const rotation = Math.abs(Number(s.rotation ?? s.tags?.rotate ?? 0)) % 180;
+  const [width, height] =
+    rotation === 90 ? [stream.height ?? 0, stream.width ?? 0] : [stream.width ?? 0, stream.height ?? 0];
+
+  // Duração da FAIXA DE VÍDEO, não do container: o áudio costuma ser uns
+  // décimos mais longo e a saída do título é calculada pelo fim — tem que
+  // terminar antes do último frame de imagem. Sem duração na faixa cai na do
+  // container; sem nenhuma das duas (WebM gravado pelo navegador/MediaRecorder
+  // não escreve duração no cabeçalho), lê o último pacote — sem isso o título
+  // sumia aos ~4s num vídeo de 60s.
+  const durationSec =
+    Number(stream.duration) || Number(data.format.duration) || (await lastPacketTime(filePath));
+
+  return { durationSec, width, height };
+}
+
+/**
+ * Timestamp do último pacote de vídeo — só demux (não decodifica), então é
+ * rápido mesmo em arquivo grande. 0 se não der pra ler.
+ */
+function lastPacketTime(filePath: string): Promise<number> {
+  return new Promise((resolve) => {
+    execFile(
+      ffprobeInstaller.path,
+      ["-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time", "-of", "csv=p=0", filePath],
+      { maxBuffer: 16 * 1024 * 1024 },
+      (err, stdout) => {
+        if (err) return resolve(0);
+        let max = 0;
+        for (const line of stdout.split("\n")) {
+          const t = Number.parseFloat(line);
+          if (Number.isFinite(t) && t > max) max = t;
+        }
+        resolve(max);
+      },
+    );
   });
 }
 
@@ -350,10 +400,31 @@ export async function renderVideoWithAnimatedTitle(
 ): Promise<Buffer> {
   const srcPath = await downloadToTemp(params.videoUrl, path.extname(params.videoUrl) || ".mp4");
   const outPath = path.join(os.tmpdir(), `${randomUUID()}-out.mp4`);
+  const cardPath = path.join(os.tmpdir(), `${randomUUID()}-card.png`);
+  // try/finally: a instância da function é reaproveitada entre requisições
+  // (Fluid Compute) e o /tmp é pequeno — se só limpasse no sucesso, cada
+  // render que falhasse deixava o vídeo de origem (até 100 MB) no disco, e
+  // poucas falhas bastavam pra derrubar os próximos renders daquela instância.
+  try {
+    return await renderInTemp(params, srcPath, cardPath, outPath);
+  } finally {
+    await Promise.all([
+      fs.unlink(srcPath).catch(() => {}),
+      fs.unlink(cardPath).catch(() => {}),
+      fs.unlink(outPath).catch(() => {}),
+    ]);
+  }
+}
+
+async function renderInTemp(
+  params: RenderVideoParams,
+  srcPath: string,
+  cardPath: string,
+  outPath: string,
+): Promise<Buffer> {
   const probe = await probeVideoFile(srcPath);
   const style = buildVideoCardStyles(params.brandColors)[params.videoTemplate ?? DEFAULT_VIDEO_TEMPLATE];
   const card = await buildOverlayCardPng(params.title || "", style, params.logoUrl);
-  const cardPath = path.join(os.tmpdir(), `${randomUUID()}-card.png`);
   await fs.writeFile(cardPath, card.buffer);
 
   // Posição do bloco: padrão encostado no fim da área segura, mais o ajuste
@@ -368,7 +439,10 @@ export async function renderVideoWithAnimatedTitle(
   const timing = titleTiming(probe.durationSec);
 
   const filterComplex = [
-    buildNormalizeFilter(probe.width, probe.height, { inputLabel: "0:v", outputLabel: "main" }),
+    // fps logo na entrada: o resto do grafo (e o encode) já trabalha só com
+    // os 30 quadros/s que vão sair — ver OUTPUT_FPS.
+    `[0:v]fps=${OUTPUT_FPS}[src]`,
+    buildNormalizeFilter(probe.width, probe.height, { inputLabel: "src", outputLabel: "main" }),
     cardFilter(timing),
     // eof_action=pass: quando o cartão acaba (fim da animação), o vídeo segue
     // sem overlay até o próprio fim — e o encode termina junto com ele.
@@ -421,13 +495,7 @@ export async function renderVideoWithAnimatedTitle(
       .save(outPath);
   });
 
-  const buf = await fs.readFile(outPath);
-  await Promise.all([
-    fs.unlink(srcPath).catch(() => {}),
-    fs.unlink(cardPath).catch(() => {}),
-    fs.unlink(outPath).catch(() => {}),
-  ]);
-  return buf;
+  return fs.readFile(outPath);
 }
 
 /** Render + upload no storage, devolvendo a URL pública. */

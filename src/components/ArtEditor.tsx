@@ -39,6 +39,19 @@ export interface EditorPhoto {
 type Offset = { offsetX: number; offsetY: number };
 type TextKind = "title" | "subtitle";
 
+/**
+ * URL exclusiva pro canvas (Fabric carrega com crossOrigin "anonymous"). A
+ * mesma imagem aparece na tela em <img> comuns (miniaturas do template e das
+ * fotos), carregadas SEM CORS — e o R2 não manda `Vary: Origin` nessa
+ * resposta, então o navegador reaproveitava a cópia sem CORS pro canvas e
+ * bloqueava. Em produção o editor abria só com a foto: sem a moldura e sem
+ * título/subtítulo (local não aparece: lá tudo é mesma origem). Um query
+ * param vira outra entrada de cache; o R2 ignora e serve o mesmo arquivo.
+ */
+function canvasUrl(url: string): string {
+  return `${url}${url.includes("?") ? "&" : "?"}cors=1`;
+}
+
 interface Props {
   postId: string;
   photos: EditorPhoto[];
@@ -212,7 +225,7 @@ export function ArtEditor({ postId, photos, templates, initial, onSaved }: Props
         h: ps.height * dispScale,
       };
 
-      const img = await fabric.FabricImage.fromURL(photo.storageUrl, {
+      const img = await fabric.FabricImage.fromURL(canvasUrl(photo.storageUrl), {
         crossOrigin: "anonymous",
       });
       const nW = img.width ?? 1;
@@ -246,16 +259,23 @@ export function ArtEditor({ postId, photos, templates, initial, onSaved }: Props
       });
       canvas.add(img);
 
-      const overlay = await fabric.FabricImage.fromURL(template.overlayAssetUrl, {
-        crossOrigin: "anonymous",
-      });
-      overlay.set({
-        left: 0, top: 0,
-        scaleX: displayW / (overlay.width ?? displayW),
-        scaleY: displayH / (overlay.height ?? displayH),
-        selectable: false, evented: false,
-      });
-      canvas.add(overlay);
+      // Se a moldura falhar por qualquer outro motivo, o editor segue sem ela
+      // em vez de abortar aqui — antes, o título e o subtítulo (adicionados
+      // logo abaixo) também sumiam e não havia o que arrastar.
+      try {
+        const overlay = await fabric.FabricImage.fromURL(canvasUrl(template.overlayAssetUrl), {
+          crossOrigin: "anonymous",
+        });
+        overlay.set({
+          left: 0, top: 0,
+          scaleX: displayW / (overlay.width ?? displayW),
+          scaleY: displayH / (overlay.height ?? displayH),
+          selectable: false, evented: false,
+        });
+        canvas.add(overlay);
+      } catch (err) {
+        console.warn("[JornAI] Moldura do template não carregou no editor:", err);
+      }
 
       // Texto arrastável — só MOVE (sem redimensionar/rotacionar, pra manter
       // fonte e largura do template). O deslocamento é salvo por post; o

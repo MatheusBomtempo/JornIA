@@ -290,11 +290,14 @@ export function PostWorkspace({ user, post, templates, company }: Props) {
     [post.id, router, dict, runAction],
   );
 
-  // Mesma ideia do addPhoto, pro vídeo — anexa e recarrega; qual usar
-  // continua sendo escolhido manualmente no VideoEditor.
+  // Mesma ideia do addPhoto, pro vídeo — anexa, recarrega e já deixa o vídeo
+  // novo selecionado no VideoEditor. Antes o editor continuava no vídeo
+  // antigo: quem usava "Adicionar ou trocar o vídeo" e salvava renderizava o
+  // vídeo errado sem perceber.
   const [videoBusy, setVideoBusy] = useState(false);
   const [videoError, setVideoError] = useState<string | null>(null);
   const [videoDragging, setVideoDragging] = useState(false);
+  const [lastAddedVideoId, setLastAddedVideoId] = useState<string | null>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
 
   const addVideo = useCallback(
@@ -317,12 +320,15 @@ export function PostWorkspace({ user, post, templates, company }: Props) {
       const result = await runAction({
         title: dict.postWorkspace.busy.uploadingVideo,
         success: dict.postWorkspace.done.videoAdded,
+        // Upload de até 100 MB + prévia no servidor: 8 s (o padrão) é normal
+        // aqui, não lentidão — a barra de progresso já mostra o andamento.
+        slowAfterSeconds: 60,
         fn: async ({ log, progress }) => {
           progress(0);
           const storageUrl = await uploadVideoFile(file, uploadProgress(progress));
           progress(null);
           log(dict.postWorkspace.upload.videoOnServer);
-          return apiPost<{ previewError?: string | null }>(
+          return apiPost<{ video: { id: string }; previewError?: string | null }>(
             `/api/posts/${post.id}/videos`,
             { storageUrl },
           );
@@ -330,6 +336,7 @@ export function PostWorkspace({ user, post, templates, company }: Props) {
       });
       setVideoBusy(false);
       if (!result.ok) return;
+      setLastAddedVideoId(result.value.video.id);
       // O vídeo entra mesmo sem prévia, mas o motivo aparece na tela em vez
       // de ficar só no log do servidor.
       if (result.value.previewError) setVideoError(result.value.previewError);
@@ -584,7 +591,7 @@ export function PostWorkspace({ user, post, templates, company }: Props) {
                 companyLogoUrl={company.logoUrl}
                 companyBrandColors={{ dark: company.brandColorDark, light: company.brandColorLight }}
                 initial={{
-                  selectedVideoId: current?.selectedVideoId,
+                  selectedVideoId: lastAddedVideoId ?? current?.selectedVideoId,
                   title: current?.title,
                   titleOffsetY: current?.titleOffset?.offsetY,
                   videoTemplate: current?.videoTemplate,

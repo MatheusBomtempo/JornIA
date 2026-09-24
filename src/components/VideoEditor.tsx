@@ -113,6 +113,9 @@ export function VideoEditor({
     const result = await run({
       title: dict.videoEditor.savingButton,
       success: dict.videoEditor.doneMessage,
+      // Render saudável leva dezenas de segundos (24 s pra 6 s de vídeo
+      // deitado, medido em produção) — só avisa de lentidão bem depois disso.
+      slowAfterSeconds: 120,
       fn: () =>
         apiPost(`/api/posts/${postId}/video`, {
           selectedVideoId: video.id,

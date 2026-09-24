@@ -43,6 +43,8 @@ interface OverlayState {
   finishedAt: number | null;
   /** Barra de progresso (upload): fração 0–1 e um detalhe tipo "12,4 MB de 48 MB". */
   progress: { ratio: number; detail: string | null } | null;
+  /** A partir de quantos segundos mostra o aviso de "demorando mais que o normal". */
+  slowAfterSeconds: number;
 }
 
 export interface RunContext {
@@ -66,6 +68,13 @@ export interface RunOptions<T> {
    * ação termina navegando pra outra página.
    */
   successDelayMs?: number;
+  /**
+   * Quando avisar que está demorando. Padrão SLOW_AFTER_SECONDS (8s) serve
+   * pra texto/arte; render de vídeo leva dezenas de segundos normalmente e,
+   * com o padrão, dizia "demorando mais que o normal — ainda estamos
+   * tentando" no meio de um render saudável.
+   */
+  slowAfterSeconds?: number;
   /** A ação em si. Recebe `log`/`progress` pra detalhar o andamento. */
   fn: (ctx: RunContext) => Promise<T>;
 }
@@ -164,6 +173,7 @@ export function ActionOverlayProvider({ children }: { children: ReactNode }) {
         error: null,
         finishedAt: null,
         progress: null,
+        slowAfterSeconds: opts.slowAfterSeconds ?? SLOW_AFTER_SECONDS,
       });
 
       try {
@@ -322,7 +332,7 @@ function ActionOverlayDialog({
           {loading && state.progress && (
             <ProgressBar ratio={state.progress.ratio} detail={state.progress.detail} />
           )}
-          {loading && elapsed >= SLOW_AFTER_SECONDS && (
+          {loading && elapsed >= state.slowAfterSeconds && (
             <p className="text-xs text-muted animate-fade-in">{t.slowHint}</p>
           )}
         </div>

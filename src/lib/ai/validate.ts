@@ -63,7 +63,16 @@ const ALWAYS_FORBIDDEN: { pattern: RegExp; rule: string; fix: string }[] = [
   },
 ];
 
-/** Termos que só podem aparecer se a fonte também os sustentar. */
+/**
+ * Termos que só podem aparecer se a fonte também os sustentar.
+ *
+ * O regex de SAÍDA precisa cobrir todas as flexões — substantivo, adjetivo
+ * E verbo. A primeira versão só pegava "interditada"/"interdição" e deixou
+ * passar em produção o título "…tomba e interdita BR-040" (fonte: só
+ * "trânsito lento"); do mesmo jeito passavam "morreu", "bloqueia",
+ * "investiga". Por isso os radicais curtos ("interdi[tç]", "bloque",
+ * "investig", "morr[e…]") em vez de palavras inteiras.
+ */
 const NEEDS_SOURCE_SUPPORT: {
   output: RegExp;
   source: RegExp;
@@ -71,19 +80,19 @@ const NEEDS_SOURCE_SUPPORT: {
   fix: string;
 }[] = [
   {
-    output: /investigad|investiga[çc][ãa]o|est[áa] investigando|sob investiga/i,
+    output: /investig/i,
     source: /investiga/i,
     rule: "investigação inventada",
     fix: "Remova menções a investigação — a fonte não descreve investigação em andamento.",
   },
   {
-    output: /interditad|interdi[çc][ãa]o/i,
+    output: /interdi[tç]/i,
     source: /interdi/i,
     rule: "interdição de via inventada",
     fix: "Remova a interdição de via — a fonte não menciona isso.",
   },
   {
-    output: /bloquead|bloqueio/i,
+    output: /bloque/i,
     source: /bloque/i,
     rule: "bloqueio de via inventado",
     fix: "Remova o bloqueio de via — a fonte não menciona isso.",
@@ -95,8 +104,10 @@ const NEEDS_SOURCE_SUPPORT: {
     fix: "Remova o desvio/rota alternativa — a fonte não menciona isso.",
   },
   {
-    output: /\bmorte|\bmort[oa]s?\b|[óo]bito|faleceu|falecid/i,
-    source: /mort|[óo]bito|falec|fatal/i,
+    // "morr" só seguido de flexão verbal — "morro" (Morro do Papagaio etc.)
+    // é geografia de BH e não pode disparar a regra.
+    output: /\bmorte|\bmort[oa]s?\b|\bmorr(e|eu|em|eram|er|endo|ia|iam)\b|[óo]bito|falec|\bfata(l|is)\b/i,
+    source: /mort|\bmorr(e|eu|em|eram|er|endo|ia|iam)\b|[óo]bito|falec|fatal/i,
     rule: "morte inventada",
     fix: "Remova qualquer menção a morte — a fonte não registra óbito.",
   },

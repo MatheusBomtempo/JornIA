@@ -39,6 +39,12 @@ interface PexelsApiPhoto {
 
 const PER_PAGE = 15;
 const FETCH_TIMEOUT_MS = 10_000;
+/**
+ * As buscas vêm das sugestões da IA — em português, como as notícias. Sem
+ * locale o Pexels interpreta a busca em inglês: "galpão em chamas" trazia
+ * foto de raposa; com pt-BR, 12 de 15 resultados eram de incêndio.
+ */
+const PEXELS_LOCALE = "pt-BR";
 
 export function isPhotoSearchEnabled(): boolean {
   return Boolean(env.photoSearch.pexelsKey);
@@ -58,7 +64,7 @@ export async function searchPhotos(
   let res: Response;
   try {
     res = await fetch(
-      `https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=${PER_PAGE}&page=${page}`,
+      `https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=${PER_PAGE}&page=${page}&locale=${PEXELS_LOCALE}`,
       { headers: { Authorization: key }, signal: controller.signal, cache: "no-store" },
     );
   } catch (err) {
